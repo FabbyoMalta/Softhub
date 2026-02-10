@@ -4,6 +4,11 @@ from datetime import date
 from typing import Any
 
 SUPPORTED_OPS = {'=', '!=', '>', '<', '>=', '<=', 'LIKE', 'IN'}
+# NOTE: operador IN pode não ser suportado em todos os ambientes IXC.
+
+TB_OS_DATA_AGENDADA = 'su_oss_chamado.data_agendada'  # TODO confirmar
+TB_OS_TIPO = 'su_oss_chamado.tipo'  # TODO confirmar
+TB_TICKET_STATUS = 'su_ticket.status'  # TODO confirmar
 
 
 def _filter(tb: str, op: str, param: Any) -> dict[str, str]:
@@ -37,12 +42,12 @@ def build_filters_os_agendadas(start: date, end: date, tipo: str) -> list[dict[s
     Mantido parametrizado para facilitar ajuste por ambiente IXC.
     """
     return [
-        _filter('su_oss_chamado.data_agendada', '>=', start.strftime('%Y-%m-%d')),
-        _filter('su_oss_chamado.data_agendada', '<=', end.strftime('%Y-%m-%d')),
-        _filter('su_oss_chamado.tipo', '=', tipo),
+        _filter(TB_OS_DATA_AGENDADA, '>=', start.strftime('%Y-%m-%d')),
+        _filter(TB_OS_DATA_AGENDADA, '<=', end.strftime('%Y-%m-%d')),
+        _filter(TB_OS_TIPO, '=', tipo),
     ]
 
 
 def build_filters_tickets_by_status(status: str) -> list[dict[str, str]]:
     """TODO(ixc-field-mapping): confirmar TB exato para status em su_ticket."""
-    return [_filter('su_ticket.status', '=', status)]
+    return [_filter(TB_TICKET_STATUS, '=', status)]

@@ -29,13 +29,17 @@ class IXCClient:
         self.max_retries = max_retries
         self.backoff_base = backoff_base
         self.auth_header = build_basic_auth_header(user, token)
+        self._client = httpx.Client(verify=self.verify_tls, timeout=self.timeout_s)
 
-    def _headers(self) -> dict[str, str]:
+    def _headers(self, action: str = 'listar') -> dict[str, str]:
         return {
             'Authorization': self.auth_header,
             'Content-Type': 'application/json',
-            'ixcsoft': 'listar',
+            'ixcsoft': action,
         }
+
+    def close(self) -> None:
+        self._client.close()
 
     def post_list(
         self,
@@ -45,6 +49,7 @@ class IXCClient:
         rp: int,
         sortname: str,
         sortorder: str,
+        action: str = 'listar',
     ) -> dict[str, Any]:
         payload = {
             'grid_param': json.dumps(grid_filters),
@@ -54,20 +59,27 @@ class IXCClient:
             'sortorder': sortorder,
         }
         url = f"{self.base_url}/{endpoint.lstrip('/')}"
-        with httpx.Client(verify=self.verify_tls, timeout=self.timeout_s) as client:
-            for attempt in range(1, self.max_retries + 1):
-                try:
-                    response = client.post(url, headers=self._headers(), json=payload)
-                    if response.status_code >= 500:
-                        raise IXCClientError(f'IXC 5xx on {endpoint}: {response.status_code}')
-                    response.raise_for_status()
-                    return response.json()
-                except (httpx.TimeoutException, httpx.NetworkError, IXCClientError) as exc:
-                    if attempt >= self.max_retries:
-                        raise IXCClientError(f'Failed IXC call for {endpoint}: {exc}') from exc
-                    time.sleep(self.backoff_base * (2 ** (attempt - 1)))
-                except httpx.HTTPStatusError as exc:
-                    raise IXCClientError(f'IXC HTTP error for {endpoint}: {exc}') from exc
+        for attempt in range(1, self.max_retries + 1):
+            try:
+                response = self._client.post(url, headers=self._headers(action=action), json=payload)
+                if response.status_code in {408, 429} or response.status_code >= 500:
+                    raise IXCClientError(
+                        f'IXC retryable status for {endpoint} on attempt {attempt}: {response.status_code}'
+                    )
+
+                response.raise_for_status()
+                data = response.json()
+                if data.get('type') == 'error':
+                    raise IXCClientError(
+                        f"IXC logical error for {endpoint} on attempt {attempt}: {data.get('message', 'unknown error')}"
+                    )
+                return data
+            except (httpx.TimeoutException, httpx.NetworkError, IXCClientError) as exc:
+                if attempt >= self.max_retries:
+                    raise IXCClientError(f'Failed IXC call for {endpoint} on attempt {attempt}: {exc}') from exc
+                time.sleep(self.backoff_base * (2 ** (attempt - 1)))
+            except httpx.HTTPStatusError as exc:
+                raise IXCClientError(f'IXC HTTP error for {endpoint} on attempt {attempt}: {exc}') from exc
         raise IXCClientError(f'Unexpected IXC failure for {endpoint}')
 
     def iterate_all(
