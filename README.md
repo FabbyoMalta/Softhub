@@ -11,18 +11,36 @@ Monorepo com FastAPI + Postgres + Redis + Celery + Vite/React TS, com integraç�
 
 ## Funcionalidades MVP
 
-- `GET /billing/open`: lista contas a receber em aberto (`valor_aberto > 0`) com enrich de contrato (`fn_areceber -> cliente_contrato`) e agregados:
-  - `total_open`
-  - `over_20_days`
-  - `oldest_due_date`
+### Billing
+
+- `GET /billing/open`: lista contas a receber em aberto (`valor_aberto > 0`) com enrich de contrato (`fn_areceber -> cliente_contrato`) e agregados.
 - Idempotência para ação de automação de 20 dias usando tabela `billing_actions`.
-- `IXCClient` robusto com `httpx`, retry/backoff e paginação por `registros`/`total`.
-- Helpers de `grid_param` para contratos, contas, atrasos, OS e tickets.
+
+### Dashboard (novo)
+
+- `GET /dashboard/agenda-week?start=YYYY-MM-DD&days=7&filter_id=&filter_json=`
+  - retorna OS "flat" normalizadas para a agenda semanal.
+- `GET /dashboard/maintenances?from=YYYY-MM-DD&to=YYYY-MM-DD&filter_id=&filter_json=`
+  - retorna OS de manutenção normalizadas.
+- Filtros salvos:
+  - `GET /filters?scope=agenda_week|maintenances`
+  - `POST /filters` com `{name, scope, definition_json}`
+  - `DELETE /filters/{id}`
+
+### UI Dashboard
+
+- Página principal exibe:
+  - topbar com filtro salvo, botão "Novo filtro" e "Salvar".
+  - agenda da semana (7 colunas com cards de OS).
+  - painel de manutenções (abas Abertas/Agendadas/Todas com novo request ao backend).
+- `FilterBuilder` aplica filtro híbrido:
+  - backend filtra por range/tipo/status/etc (server-side com `grid_param`).
+  - frontend envia somente `definition_json` (intenção), sem montar `grid_param`.
 
 ## Rodando (modo MOCK)
 
 ```bash
-docker compose up --build
+docker compose up -d --build
 ```
 
 - API: `http://localhost:8000`
@@ -39,25 +57,26 @@ No `docker-compose.yml` (ou `.env` da API), altere:
 - `IXC_TOKEN=<token-webservice>`
 - `IXC_VERIFY_TLS=true|false` (default `true`)
 
-Padrão de integração implementado:
+No modo real, o backend traduz `definition_json` em `grid_param` no builder central:
 
-- URL: `https://{IXC_HOST}/webservice/v1/<endpoint>`
-- Headers:
-  - `Authorization: Basic base64(usuario:token)`
-  - `Content-Type: application/json`
-  - `ixcsoft: listar`
-- Payload:
-  - `grid_param` (JSON string)
-  - `page`, `rp` (string)
-  - `sortname`, `sortorder`
+- `services/core_api/app/services/ixc_grid_builder.py`
 
-## TODOs explícitos (mapeamento por ambiente)
+> Observação: há TODOs explícitos para confirmar nomes exatos de TB/campos por ambiente IXC.
 
-1. Confirmar TB/campos reais de `su_oss_chamado` para filtros de data agendada/status/tipo.
-2. Confirmar TB/campo real de status de `su_ticket`.
-3. Validar semântica local de `status` em `fn_areceber` (MVP usa `valor_aberto > 0` como regra principal).
-4. Evoluir fallback de join sem `id_contrato` usando `id_cliente`.
-5. Confirmar se operador `IN` é suportado na instância IXC local; caso não, manter batching/cache.
+## Como criar filtro salvo pela UI
+
+1. Abrir dashboard web (`http://localhost:5173`).
+2. Clicar em **Novo filtro**.
+3. Definir tipo/status/cidade/assunto/etc e **Aplicar** para consulta ad-hoc.
+4. Informar nome + escopo e clicar **Salvar filtro**.
+5. Selecionar o filtro salvo no dropdown da topbar.
+
+## Testes principais
+
+```bash
+cd services/core_api
+python -m pytest -q
+```
 
 ## Endpoints IXC usados (RealIXCAdapter)
 
