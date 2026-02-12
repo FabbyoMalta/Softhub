@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.billing import router as billing_router
 from app.api.dashboard import router as dashboard_router
@@ -8,7 +9,17 @@ from app.db import init_db
 from app.services.adapters import close_ixc_resources
 
 settings = get_settings()
+
 app = FastAPI(title=settings.app_name)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # depois você restringe
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 app.include_router(billing_router)
 app.include_router(dashboard_router)
 app.include_router(filters_router)
