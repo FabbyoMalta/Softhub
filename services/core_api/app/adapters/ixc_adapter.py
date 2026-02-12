@@ -4,14 +4,8 @@ from datetime import date, timedelta
 from random import Random
 from typing import Any, Protocol
 
-from app.clients.ixc_client import IXCClient
-from app.services.ixc_grid_builder import (
-    TB_OS_ASSUNTO,
-    TB_OS_CIDADE,
-    TB_OS_DATA_AGENDADA,
-    TB_OS_STATUS,
-    TB_OS_TIPO,
-)
+from app.clients.ixc_client import IXCClient, IXCClientError
+from app.services.ixc_grid_builder import TB_OS_ID_CLIENTE
 from app.utils.ixc_filters import build_filters_contas_em_aberto, build_filters_contrato_by_id
 
 
@@ -22,12 +16,14 @@ class IXCAdapter(Protocol):
 
     def list_service_orders(self, grid_filters: list[dict[str, Any]]) -> list[dict[str, Any]]: ...
 
+    def list_clientes_by_ids(self, ids: list[str]) -> dict[str, dict[str, Any]]: ...
+
 
 class RealIXCAdapter:
     ENDPOINT_CONTRATOS = '/cliente_contrato'
     ENDPOINT_OSS = '/su_oss_chamado'
-    ENDPOINT_TICKETS = '/su_ticket'
     ENDPOINT_ARECEBER = '/fn_areceber'
+    CLIENT_ENDPOINT = '/cliente'  # TODO: confirmar endpoint por ambiente
 
     def __init__(self, client: IXCClient) -> None:
         self.client = client
@@ -41,14 +37,37 @@ class RealIXCAdapter:
         return self.client.iterate_all(self.ENDPOINT_CONTRATOS, grid_filters, sortname='id')
 
     def list_contas_receber_abertas(self) -> list[dict[str, Any]]:
-        return self.client.iterate_all(
-            self.ENDPOINT_ARECEBER,
-            build_filters_contas_em_aberto(),
-            sortname='id',
-        )
+        return self.client.iterate_all(self.ENDPOINT_ARECEBER, build_filters_contas_em_aberto(), sortname='id')
 
     def list_service_orders(self, grid_filters: list[dict[str, Any]]) -> list[dict[str, Any]]:
         return self.client.iterate_all(self.ENDPOINT_OSS, grid_filters, sortname='id')
+
+    def list_clientes_by_ids(self, ids: list[str]) -> dict[str, dict[str, Any]]:
+        cache: dict[str, dict[str, Any]] = {}
+        uniq = [str(i) for i in ids if str(i).strip()]
+        if not uniq:
+            return cache
+
+        try:
+            in_filter = [{'TB': TB_OS_ID_CLIENTE.replace('su_oss_chamado', 'cliente'), 'OP': 'IN', 'P': ','.join(uniq)}]
+            rows = self.client.iterate_all(self.CLIENT_ENDPOINT, in_filter, sortname='id')
+            for row in rows:
+                rid = str(row.get('id') or row.get('id_cliente') or '')
+                if rid:
+                    cache[rid] = row
+            if cache:
+                return cache
+        except IXCClientError:
+            pass
+
+        for idx in range(0, len(uniq), 50):
+            batch = uniq[idx : idx + 50]
+            for cid in batch:
+                filters = [{'TB': 'cliente.id', 'OP': '=', 'P': cid}]
+                rows = self.client.iterate_all(self.CLIENT_ENDPOINT, filters, sortname='id')
+                if rows:
+                    cache[cid] = rows[0]
+        return cache
 
 
 class MockIXCAdapter:
@@ -97,60 +116,59 @@ class MockIXCAdapter:
 
     def list_service_orders(self, grid_filters: list[dict[str, Any]]) -> list[dict[str, Any]]:
         rng = Random(42)
-        statuses = ['aberta', 'agendada', 'finalizada']
-        cities = ['Vila Velha', 'Vitória', 'Serra', 'Cariacica']
-        neighborhoods = ['Centro', 'Praia', 'Jardim', 'Industrial']
-        assuntos = ['ONU sem sinal', 'Troca de roteador', 'Instalação comercial', 'Mudança de endereço']
-
+        statuses = ['A', 'AN', 'EN', 'AS', 'AG', 'DS', 'EX', 'F', 'RAG']
+        assuntos = ['1', '15', '17', '34', '31', '99']
+        rows: list[dict[str, Any]] = []
         today = date.today()
-        all_rows: list[dict[str, Any]] = []
-        for idx in range(60):
-            scheduled = today - timedelta(days=10) + timedelta(days=idx % 21)
-            os_type = 'manutencao' if idx % 3 else 'instalacao'
-            all_rows.append(
+        for idx in range(80):
+            d = today - timedelta(days=10) + timedelta(days=idx % 24)
+            rows.append(
                 {
                     'id': f'OS-{1000 + idx}',
-                    'data_agendada': scheduled.strftime('%Y-%m-%d'),
-                    'hora_agendada': f'{8 + (idx % 9):02d}:{(idx % 2) * 30:02d}',
-                    'tipo': os_type,
+                    'id_cliente': str(500 + (idx % 15)),
+                    'id_assunto': assuntos[idx % len(assuntos)],
                     'status': statuses[idx % len(statuses)],
-                    'id_cliente': f'C{3000 + idx}',
-                    'cliente': f'Cliente {idx}',
-                    'cidade': cities[idx % len(cities)],
-                    'bairro': neighborhoods[idx % len(neighborhoods)],
+                    'data_agenda': f"{d.strftime('%Y-%m-%d')} {8 + (idx % 10):02d}:{(idx % 2) * 30:02d}:00",
                     'endereco': f'Rua {idx}, {10 + idx}',
-                    'assunto': assuntos[rng.randrange(0, len(assuntos))],
+                    'bairro': ['Centro', 'Praia', 'Jardim', 'Industrial'][idx % 4],
+                    'protocolo': f'P{10000+idx}',
+                    'mensagem': ['ONU', 'Sem conexão', 'Suporte', 'Mudança'][rng.randrange(0, 4)],
                 }
             )
 
-        def match(row: dict[str, Any], gf: dict[str, Any]) -> bool:
-            tb = gf.get('TB')
-            op = gf.get('OP')
-            param = str(gf.get('P') or '')
-
-            value_map = {
-                TB_OS_DATA_AGENDADA: row.get('data_agendada', ''),
-                TB_OS_TIPO: row.get('tipo', ''),
-                TB_OS_STATUS: row.get('status', ''),
-                TB_OS_CIDADE: row.get('cidade', ''),
-                TB_OS_ASSUNTO: row.get('assunto', ''),
+        def _match(row: dict[str, Any], f: dict[str, Any]) -> bool:
+            tb, op, p = f.get('TB'), f.get('OP'), str(f.get('P') or '')
+            field_map = {
+                'su_oss_chamado.data_agenda': 'data_agenda',
+                'su_oss_chamado.status': 'status',
+                'su_oss_chamado.id_assunto': 'id_assunto',
+                'su_oss_chamado.id_cliente': 'id_cliente',
             }
-            value = str(value_map.get(tb, ''))
-
+            v = str(row.get(field_map.get(tb, ''), ''))
             if op == '=':
-                return value.lower() == param.lower()
-            if op == '!=':
-                return value.lower() != param.lower()
-            if op == 'LIKE':
-                needle = param.replace('%', '').lower()
-                return needle in value.lower()
+                return v == p
+            if op == 'IN':
+                return v in [x.strip() for x in p.split(',') if x.strip()]
             if op == '>=':
-                return value >= param
+                return v >= p
             if op == '<=':
-                return value <= param
+                return v <= p
             return True
 
-        filtered = all_rows
-        for gf in grid_filters:
-            filtered = [row for row in filtered if match(row, gf)]
-        return filtered
+        out = rows
+        for f in grid_filters:
+            out = [r for r in out if _match(r, f)]
+        return out
+
+    def list_clientes_by_ids(self, ids: list[str]) -> dict[str, dict[str, Any]]:
+        data: dict[str, dict[str, Any]] = {}
+        for cid in ids:
+            data[str(cid)] = {
+                'id': str(cid),
+                'nome': f'Cliente {cid}',
+                'cidade': ['Vila Velha', 'Vitória', 'Serra'][int(cid) % 3],
+                'bairro': ['Centro', 'Praia', 'Jardim'][int(cid) % 3],
+                'endereco': f'Av. Cliente {cid}',
+                'telefone': f'2799999{int(cid)%1000:03d}',
+            }
+        return data

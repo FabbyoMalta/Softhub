@@ -8,15 +8,20 @@ from pydantic import BaseModel
 
 class DashboardItem(BaseModel):
     id: str
+    scheduled_at: str | None = None
     date: str
     time: str | None = None
-    type: Literal['instalacao', 'manutencao']
-    status: str | None = None
-    customer_id: str | None = None
+    status_code: str | None = None
+    status_label: str | None = None
+    assunto_id: str | None = None
+    type: Literal['instalacao', 'manutencao', 'outros']
+    id_cliente: str | None = None
     customer_name: str | None = None
-    city: str | None = None
-    neighborhood: str | None = None
+    phone: str | None = None
     address: str | None = None
+    bairro: str | None = None
+    cidade: str | None = None
+    protocolo: str | None = None
     source: str = 'ixc'
 
 
