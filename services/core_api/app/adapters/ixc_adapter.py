@@ -1,19 +1,26 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
+from random import Random
 from typing import Any, Protocol
 
 from app.clients.ixc_client import IXCClient
-from app.utils.ixc_filters import (
-    build_filters_contas_em_aberto,
-    build_filters_contrato_by_id,
+from app.services.ixc_grid_builder import (
+    TB_OS_ASSUNTO,
+    TB_OS_CIDADE,
+    TB_OS_DATA_AGENDADA,
+    TB_OS_STATUS,
+    TB_OS_TIPO,
 )
+from app.utils.ixc_filters import build_filters_contas_em_aberto, build_filters_contrato_by_id
 
 
 class IXCAdapter(Protocol):
     def list_contratos(self, filters: dict[str, Any] | None = None) -> list[dict[str, Any]]: ...
 
     def list_contas_receber_abertas(self) -> list[dict[str, Any]]: ...
+
+    def list_service_orders(self, grid_filters: list[dict[str, Any]]) -> list[dict[str, Any]]: ...
 
 
 class RealIXCAdapter:
@@ -40,13 +47,8 @@ class RealIXCAdapter:
             sortname='id',
         )
 
-    def list_oss_agendadas(self, start: date, end: date, tipo: str) -> list[dict[str, Any]]:
-        """TODO(ixc-field-mapping): ajustar grid filters reais de OS por ambiente."""
-        return self.client.iterate_all(self.ENDPOINT_OSS, [], sortname='id')
-
-    def list_tickets_by_status(self, status: str) -> list[dict[str, Any]]:
-        """TODO(ixc-field-mapping): ajustar grid filters reais de ticket por ambiente."""
-        return self.client.iterate_all(self.ENDPOINT_TICKETS, [], sortname='id')
+    def list_service_orders(self, grid_filters: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        return self.client.iterate_all(self.ENDPOINT_OSS, grid_filters, sortname='id')
 
 
 class MockIXCAdapter:
@@ -92,3 +94,63 @@ class MockIXCAdapter:
                 'linha_digitavel': '',
             },
         ]
+
+    def list_service_orders(self, grid_filters: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        rng = Random(42)
+        statuses = ['aberta', 'agendada', 'finalizada']
+        cities = ['Vila Velha', 'Vitória', 'Serra', 'Cariacica']
+        neighborhoods = ['Centro', 'Praia', 'Jardim', 'Industrial']
+        assuntos = ['ONU sem sinal', 'Troca de roteador', 'Instalação comercial', 'Mudança de endereço']
+
+        today = date.today()
+        all_rows: list[dict[str, Any]] = []
+        for idx in range(60):
+            scheduled = today - timedelta(days=10) + timedelta(days=idx % 21)
+            os_type = 'manutencao' if idx % 3 else 'instalacao'
+            all_rows.append(
+                {
+                    'id': f'OS-{1000 + idx}',
+                    'data_agendada': scheduled.strftime('%Y-%m-%d'),
+                    'hora_agendada': f'{8 + (idx % 9):02d}:{(idx % 2) * 30:02d}',
+                    'tipo': os_type,
+                    'status': statuses[idx % len(statuses)],
+                    'id_cliente': f'C{3000 + idx}',
+                    'cliente': f'Cliente {idx}',
+                    'cidade': cities[idx % len(cities)],
+                    'bairro': neighborhoods[idx % len(neighborhoods)],
+                    'endereco': f'Rua {idx}, {10 + idx}',
+                    'assunto': assuntos[rng.randrange(0, len(assuntos))],
+                }
+            )
+
+        def match(row: dict[str, Any], gf: dict[str, Any]) -> bool:
+            tb = gf.get('TB')
+            op = gf.get('OP')
+            param = str(gf.get('P') or '')
+
+            value_map = {
+                TB_OS_DATA_AGENDADA: row.get('data_agendada', ''),
+                TB_OS_TIPO: row.get('tipo', ''),
+                TB_OS_STATUS: row.get('status', ''),
+                TB_OS_CIDADE: row.get('cidade', ''),
+                TB_OS_ASSUNTO: row.get('assunto', ''),
+            }
+            value = str(value_map.get(tb, ''))
+
+            if op == '=':
+                return value.lower() == param.lower()
+            if op == '!=':
+                return value.lower() != param.lower()
+            if op == 'LIKE':
+                needle = param.replace('%', '').lower()
+                return needle in value.lower()
+            if op == '>=':
+                return value >= param
+            if op == '<=':
+                return value <= param
+            return True
+
+        filtered = all_rows
+        for gf in grid_filters:
+            filtered = [row for row in filtered if match(row, gf)]
+        return filtered
