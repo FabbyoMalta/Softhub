@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { createRoot } from 'react-dom/client'
+import './styles.css'
 
 type DashboardItem = {
   id: string
@@ -124,28 +125,28 @@ function FilterBuilder({
             <option value="outros">Outros</option>
           </select>
         </div>
-        <div>
-          <strong>Status</strong>
-          <div>
+        <div className="field-row">
+          <label>Status</label>
+          <div className="checkbox-row">
             {STATUS_OPTIONS.map((s) => (
-              <label key={s} style={{ marginRight: 8 }}>
+              <label key={s}>
                 <input type="checkbox" checked={(draft.status_codes ?? []).includes(s)} onChange={() => toggleStatus(s)} /> {s}
               </label>
             ))}
           </div>
         </div>
-        <div>
+        <div className="field-row">
           <label>Assuntos (ids separados por vírgula)</label>
           <input
             value={assuntosText}
             onChange={(e) => setAssuntosText(e.target.value)}
-            onBlur={() => setDraft({ ...draft, assunto_ids: assuntosText.split(',').map((x) => x.trim()).filter(Boolean) })}
             placeholder="1,17,34"
           />
         </div>
         <hr />
-        <div>
-          <input placeholder="Nome do filtro" value={name} onChange={(e) => setName(e.target.value)} />
+        <div className="field-row">
+          <label>Nome do filtro</label>
+          <input value={name} onChange={(e) => setName(e.target.value)} />
           <select value={scope} onChange={(e) => setScope(e.target.value as 'agenda_week' | 'maintenances')}>
             <option value="agenda_week">Agenda</option>
             <option value="maintenances">Manutenções</option>
@@ -216,7 +217,7 @@ function AgendaWeekBoard({ items, startDate, days }: { items: DashboardItem[]; s
   )
 }
 
-function MaintenancesPanel({ items }: { items: DashboardItem[] }) {
+function MaintenancesPanel({ items, loading }: { items: DashboardItem[]; loading: boolean }) {
   const [tab, setTab] = useState<'open' | 'scheduled' | 'done'>('open')
   const filtered = useMemo(() => {
     if (tab === 'open') return items.filter((i) => OPEN_LIKE.includes(i.status_code))
@@ -225,12 +226,14 @@ function MaintenancesPanel({ items }: { items: DashboardItem[] }) {
   }, [items, tab])
 
   return (
-    <section>
-      <h2>Manutenções</h2>
-      <div style={{ display: 'flex', gap: 8 }}>
-        <button onClick={() => setTab('open')}>Abertas/Andamento</button>
-        <button onClick={() => setTab('scheduled')}>Agendadas</button>
-        <button onClick={() => setTab('done')}>Finalizadas</button>
+    <section className="panel">
+      <header className="panel-header">
+        <h2>Manutenções</h2>
+      </header>
+      <div className="tab-row">
+        <button className={`btn ${tab === 'open' ? 'primary' : ''}`} onClick={() => setTab('open')}>Abertas</button>
+        <button className={`btn ${tab === 'scheduled' ? 'primary' : ''}`} onClick={() => setTab('scheduled')}>Agendadas</button>
+        <button className={`btn ${tab === 'done' ? 'primary' : ''}`} onClick={() => setTab('done')}>Finalizadas</button>
       </div>
       {filtered.length === 0 ? (
         <p>Nenhuma OS encontrada no período.</p>
@@ -292,8 +295,17 @@ function App() {
       ? new URLSearchParams({ from: effectiveStart, to: maintenanceTo, filter_id: filterId })
       : new URLSearchParams({ from: effectiveStart, to: maintenanceTo, filter_json: JSON.stringify({ ...(filter || {}), category: 'manutencao' }) })
 
-    fetch(`${API}/dashboard/agenda-week?${agendaParams}`).then((res) => res.json()).then(setAgenda)
-    fetch(`${API}/dashboard/maintenances?${maintParams}`).then((res) => res.json()).then(setMaintenances)
+    setLoading(true)
+    try {
+      const [agendaRes, maintRes] = await Promise.all([
+        fetch(`${API}/dashboard/agenda-week?${agendaParams}`),
+        fetch(`${API}/dashboard/maintenances?${maintParams}`),
+      ])
+      setAgenda(await agendaRes.json())
+      setMaintenances(await maintRes.json())
+    } finally {
+      setLoading(false)
+    }
   }
 
   useEffect(() => {
