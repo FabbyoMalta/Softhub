@@ -19,6 +19,25 @@ def create_saved_filter(name: str, scope: str, definition_json: dict) -> SavedFi
         return row
 
 
+def get_saved_filter(filter_id: str) -> SavedFilter | None:
+    with SessionLocal() as session:
+        return session.scalar(select(SavedFilter).where(SavedFilter.id == filter_id))
+
+
+def update_saved_filter(filter_id: str, name: str, scope: str, definition_json: dict) -> SavedFilter | None:
+    with SessionLocal() as session:
+        row = session.scalar(select(SavedFilter).where(SavedFilter.id == filter_id))
+        if row is None:
+            return None
+
+        row.name = name
+        row.scope = scope
+        row.definition_json = definition_json
+        session.commit()
+        session.refresh(row)
+        return row
+
+
 def delete_saved_filter(filter_id: str) -> bool:
     with SessionLocal() as session:
         result = session.execute(delete(SavedFilter).where(SavedFilter.id == filter_id))
@@ -27,6 +46,5 @@ def delete_saved_filter(filter_id: str) -> bool:
 
 
 def get_saved_filter_definition(filter_id: str) -> dict | None:
-    with SessionLocal() as session:
-        row = session.scalar(select(SavedFilter).where(SavedFilter.id == filter_id))
-        return row.definition_json if row else None
+    row = get_saved_filter(filter_id)
+    return row.definition_json if row else None
