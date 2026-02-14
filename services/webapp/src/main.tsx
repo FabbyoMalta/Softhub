@@ -317,7 +317,7 @@ function App() {
     fetch(`${API}/filters?scope=agenda_week`).then((res) => res.json()).then(setSavedFilters)
   }
 
-  const loadDashboard = (filter?: FilterDefinition, filterId?: string, selectedStart?: string, selectedDays?: number) => {
+  const loadDashboard = async (filter?: FilterDefinition, filterId?: string, selectedStart?: string, selectedDays?: number) => {
     const effectiveStart = selectedStart ?? startDate
     const effectiveDays = selectedDays ?? days
     const maintenanceTo = addDays(effectiveStart, effectiveDays - 1)
@@ -330,17 +330,17 @@ function App() {
       : new URLSearchParams({ from: effectiveStart, to: maintenanceTo, filter_json: JSON.stringify({ ...(filter || {}), category: 'manutencao' }) })
 
     setLoading(true)
-    Promise.all([
-      fetch(`${API}/dashboard/agenda-week?${agendaParams}`).then((res) => res.json()),
-      fetch(`${API}/dashboard/maintenances?${maintParams}`).then((res) => res.json()),
-    ])
-      .then(([agendaData, maintenanceData]) => {
-        setAgenda(agendaData)
-        setMaintenances(maintenanceData)
-      })
-      .finally(() => {
-        setLoading(false)
-      })
+    try {
+      const [agendaRes, maintRes] = await Promise.all([
+        fetch(`${API}/dashboard/agenda-week?${agendaParams}`),
+        fetch(`${API}/dashboard/maintenances?${maintParams}`),
+      ])
+      const [agendaData, maintenanceData] = await Promise.all([agendaRes.json(), maintRes.json()])
+      setAgenda(agendaData)
+      setMaintenances(maintenanceData)
+    } finally {
+      setLoading(false)
+    }
   }
 
   useEffect(() => {
