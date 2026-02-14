@@ -65,3 +65,25 @@ def test_saved_filters_update():
     item = next(filter_item for filter_item in listed.json() if filter_item['id'] == filter_id)
     assert item['name'] == 'Filtro atualizado'
     assert item['definition_json'] == {'status_codes': ['RAG'], 'assunto_ids': ['17']}
+
+
+def test_dashboard_summary_returns_expected_shape():
+    response = client.get('/dashboard/summary', params={'start': '2025-01-01', 'days': 7, 'today': '2025-01-02'})
+    assert response.status_code == 200
+    data = response.json()
+    assert data['period']['start'] == '2025-01-01'
+    assert data['period']['end'] == '2025-01-07'
+    assert set(data['instalacoes'].keys()) == {'agendadas_hoje', 'finalizadas_hoje', 'total_periodo'}
+    assert set(data['manutencoes'].keys()) == {'abertas_total', 'abertas_hoje', 'finalizadas_hoje', 'total_periodo'}
+
+
+def test_settings_get_and_put():
+    get_response = client.get('/settings')
+    assert get_response.status_code == 200
+    payload = get_response.json()
+    payload['subject_groups']['outros'] = ['99']
+    payload['default_filters']['agenda'] = None
+
+    update_response = client.put('/settings', json=payload)
+    assert update_response.status_code == 200
+    assert update_response.json()['subject_groups']['outros'] == ['99']

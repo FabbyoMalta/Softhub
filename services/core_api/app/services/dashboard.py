@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, timedelta
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from app.adapters.ixc_adapter import IXCAdapter
 from app.services.ixc_grid_builder import expand_os_query_grids
@@ -19,7 +20,7 @@ STATUS_LABELS = {
 }
 STATUS_GROUPS = {
     'open_like': ['A', 'AN', 'EN', 'AS', 'DS', 'EX', 'RAG'],
-    'scheduled': ['AG', 'RAG'],
+    'scheduled': ['AG', 'RAG', 'AS', 'DS', 'EX'],
     'done': ['F'],
 }
 ASSUNTO_CATEGORIES = {
@@ -31,6 +32,7 @@ ASSUNTO_CATEGORIES = {
 }
 INSTALL_ASSUNTOS = {'1'}
 MAINTENANCE_ASSUNTOS = {'17', '34', '31'}
+SAO_PAULO_TZ = ZoneInfo('America/Sao_Paulo')
 
 
 def parse_date_or_default(raw: str | None, default: date) -> date:
@@ -123,6 +125,25 @@ def normalize_row(row: dict[str, Any], customer: dict[str, Any] | None) -> dict[
     }
 
 
+def _fetch_order_rows(
+    adapter: IXCAdapter,
+    date_start: date,
+    date_end: date,
+    statuses: list[str],
+    assunto_ids: list[str],
+) -> list[dict[str, Any]]:
+    grids = expand_os_query_grids(date_start, date_end, statuses, assunto_ids, use_in=False)
+    seen: set[str] = set()
+    rows: list[dict[str, Any]] = []
+    for grid in grids:
+        for row in adapter.list_service_orders(grid):
+            key = str(row.get('id') or '')
+            if key and key not in seen:
+                seen.add(key)
+                rows.append(row)
+    return rows
+
+
 def fetch_dashboard_items(
     adapter: IXCAdapter,
     scope: str,
@@ -134,17 +155,93 @@ def fetch_dashboard_items(
     statuses = [str(x) for x in definition.get('status_codes') or []]
     assunto_ids = [str(x) for x in definition.get('assunto_ids') or []]
 
-    grids = expand_os_query_grids(date_start, date_end, statuses, assunto_ids, use_in=False)
-    seen: set[str] = set()
-    rows: list[dict[str, Any]] = []
-    for grid in grids:
-        for row in adapter.list_service_orders(grid):
-            key = str(row.get('id') or '')
-            if key and key not in seen:
-                seen.add(key)
-                rows.append(row)
+    rows = _fetch_order_rows(adapter, date_start, date_end, statuses, assunto_ids)
 
     ids = sorted({str(r.get('id_cliente')) for r in rows if r.get('id_cliente')})
     clientes = adapter.list_clientes_by_ids(ids) if ids else {}
 
     return [normalize_row(r, clientes.get(str(r.get('id_cliente') or ''))) for r in rows]
+
+
+def _resolve_today(today: str | None) -> date:
+    if today:
+        return parse_date_or_default(today, datetime.now(SAO_PAULO_TZ).date())
+    return datetime.now(SAO_PAULO_TZ).date()
+
+
+def _is_same_day(raw: str | None, reference: date) -> bool:
+    dt = _parse_dt(raw)
+    if not dt:
+        return False
+    return dt.date() == reference
+
+
+def build_dashboard_summary(
+    adapter: IXCAdapter,
+    date_start: date,
+    days: int,
+    definition_json: dict[str, Any] | None,
+    today: str | None = None,
+) -> dict[str, Any]:
+    total_days = max(1, min(days, 31))
+    date_end = date_start + timedelta(days=total_days - 1)
+    today_date = _resolve_today(today)
+    definition = dict(definition_json or {})
+
+    install_rows = _fetch_order_rows(
+        adapter,
+        date_start,
+        date_end,
+        STATUS_GROUPS['open_like'] + STATUS_GROUPS['scheduled'] + STATUS_GROUPS['done'],
+        sorted(INSTALL_ASSUNTOS),
+    )
+    maint_rows = _fetch_order_rows(
+        adapter,
+        date_start,
+        date_end,
+        STATUS_GROUPS['open_like'] + STATUS_GROUPS['scheduled'] + STATUS_GROUPS['done'],
+        sorted(MAINTENANCE_ASSUNTOS),
+    )
+
+    selected_statuses = {str(s) for s in definition.get('status_codes') or []}
+    if selected_statuses:
+        install_rows = [r for r in install_rows if str(r.get('status') or '') in selected_statuses]
+        maint_rows = [r for r in maint_rows if str(r.get('status') or '') in selected_statuses]
+
+    summary = {
+        'period': {
+            'start': date_start.strftime('%Y-%m-%d'),
+            'end': date_end.strftime('%Y-%m-%d'),
+        },
+        'instalacoes': {
+            'agendadas_hoje': sum(
+                1
+                for r in install_rows
+                if str(r.get('status') or '') in STATUS_GROUPS['scheduled'] and _is_same_day(r.get('data_agenda'), today_date)
+            ),
+            'finalizadas_hoje': sum(
+                1
+                for r in install_rows
+                if str(r.get('status') or '') in STATUS_GROUPS['done']
+                and _is_same_day(r.get('data_fechamento') or r.get('data_final') or r.get('data_agenda'), today_date)
+            ),
+            'total_periodo': len(install_rows),
+        },
+        'manutencoes': {
+            'abertas_total': sum(1 for r in maint_rows if str(r.get('status') or '') in STATUS_GROUPS['open_like']),
+            'abertas_hoje': sum(
+                1
+                for r in maint_rows
+                if str(r.get('status') or '') in STATUS_GROUPS['open_like']
+                and (_is_same_day(r.get('data_agenda'), today_date) or _is_same_day(r.get('data_abertura'), today_date))
+            ),
+            'finalizadas_hoje': sum(
+                1
+                for r in maint_rows
+                if str(r.get('status') or '') in STATUS_GROUPS['done']
+                and _is_same_day(r.get('data_fechamento') or r.get('data_final') or r.get('data_agenda'), today_date)
+            ),
+            'total_periodo': len(maint_rows),
+        },
+    }
+    return summary
