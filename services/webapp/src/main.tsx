@@ -62,18 +62,6 @@ const addDays = (base: string, days: number) => {
   return toISODate(date)
 }
 
-const buildPeriodLabel = (startDate: string, days: number) => {
-  const end = addDays(startDate, days - 1)
-  return `${dateFormatter.format(parseISODate(startDate))} até ${dateFormatter.format(parseISODate(end))}`
-}
-
-const statusBadgeClass = (statusCode: string) => {
-  if (DONE.includes(statusCode)) return 'badge success'
-  if (SCHEDULED.includes(statusCode)) return 'badge warning'
-  if (['EN', 'AS'].includes(statusCode)) return 'badge info'
-  return 'badge danger'
-}
-
 function FilterBuilder({
   open,
   value,
@@ -125,19 +113,12 @@ function FilterBuilder({
   }
 
   return (
-    <div className="modal-backdrop">
-      <div className="modal-panel">
-        <h3>{editingFilter ? 'Editar filtro salvo' : 'Novo filtro'}</h3>
-        <div className="field-row">
-          <label>Categoria</label>
-          <select
-            value={draft.category ?? ''}
-            onChange={(e) => {
-              const value = e.target.value
-              const category = value === '' ? undefined : (value as FilterDefinition['category'])
-              setDraft({ ...draft, category })
-            }}
-          >
+    <div style={{ position: 'fixed', inset: 0, background: '#0006', display: 'grid', placeItems: 'center' }}>
+      <div style={{ background: '#fff', padding: 16, width: 620 }}>
+        <h3>{editingFilter ? 'Editar filtro' : 'Filter Builder'}</h3>
+        <div>
+          <label>Categoria </label>
+          <select value={draft.category ?? ''} onChange={(e) => setDraft({ ...draft, category: (e.target.value || undefined) as any })}>
             <option value="">(qualquer)</option>
             <option value="instalacao">Instalação</option>
             <option value="manutencao">Manutenção</option>
@@ -171,9 +152,8 @@ function FilterBuilder({
             <option value="maintenances">Manutenções</option>
           </select>
         </div>
-        <div className="actions-row">
+        <div style={{ marginTop: 12, display: 'flex', gap: 8 }}>
           <button
-            className="btn primary"
             onClick={() => {
               onApply(buildPayload())
               onClose()
@@ -181,68 +161,58 @@ function FilterBuilder({
           >
             Aplicar
           </button>
-          <button className="btn" onClick={() => name && onSave(name, scope, buildPayload())}>Salvar novo</button>
-          {editingFilter && <button className="btn" onClick={() => name && onUpdate(editingFilter.id, name, scope, buildPayload())}>Atualizar</button>}
-          <button className="btn ghost" onClick={onClose}>Fechar</button>
+          <button onClick={() => name && onSave(name, scope, buildPayload())}>Salvar novo</button>
+          {editingFilter && <button onClick={() => name && onUpdate(editingFilter.id, name, scope, buildPayload())}>Atualizar</button>}
+          <button onClick={onClose}>Fechar</button>
         </div>
       </div>
     </div>
   )
 }
 
-function AgendaWeekBoard({ items, startDate, days, loading }: { items: DashboardItem[]; startDate: string; days: number; loading: boolean }) {
+function AgendaWeekBoard({ items, startDate, days }: { items: DashboardItem[]; startDate: string; days: number }) {
   const grouped = useMemo(() => {
     const map = new Map<string, DashboardItem[]>()
     items.forEach((item) => map.set(item.date, [...(map.get(item.date) ?? []), item]))
     return map
   }, [items])
 
-  const dates = useMemo(() => Array.from({ length: days }, (_, idx) => addDays(startDate, idx)), [startDate, days])
+  const dates = useMemo(() => {
+    return Array.from({ length: days }, (_, idx) => addDays(startDate, idx))
+  }, [startDate, days])
 
   return (
-    <section className="panel">
-      <header className="panel-header">
-        <h2>Agenda técnica</h2>
-        <p>Período: {buildPeriodLabel(startDate, days)}</p>
-      </header>
+    <section>
+      <h2>Agenda da Semana</h2>
+      <p>Agenda iniciando em: {dateFormatter.format(parseISODate(startDate))}</p>
+      <div style={{ display: 'grid', gridTemplateColumns: `repeat(${days}, minmax(120px, 1fr))`, gap: 8 }}>
+        {dates.map((day) => {
+          const date = parseISODate(day)
+          const dayLabel = dayLabelFormatter.format(date).replace('.', '')
+          const header = `${dayLabel.charAt(0).toUpperCase()}${dayLabel.slice(1)} ${dateFormatter.format(date)}`
 
-      {loading ? (
-        <div className="agenda-grid">
-          {Array.from({ length: days }).map((_, idx) => <div key={idx} className="skeleton day-skeleton" />)}
-        </div>
-      ) : (
-        <>
-          <div className="agenda-grid">
-            {dates.map((day) => {
-              const date = parseISODate(day)
-              const dayLabel = dayLabelFormatter.format(date).replace('.', '')
-              const header = `${dayLabel.charAt(0).toUpperCase()}${dayLabel.slice(1)} ${dateFormatter.format(date)}`
-
-              return (
-                <article key={day} className="day-card">
-                  <h4>{header}</h4>
-                  <div className="day-list">
-                    {(grouped.get(day) ?? []).map((item) => (
-                      <div key={item.id} className="ticket-card">
-                        <div className="ticket-head">
-                          <strong>{item.time || '--:--'}</strong>
-                          <span className={statusBadgeClass(item.status_code)}>{item.status_label || item.status_code}</span>
-                        </div>
-                        <div className="ticket-customer">{item.customer_name || 'Cliente não informado'}</div>
-                        <div className="ticket-meta">{item.bairro || '-'} · {item.cidade || '-'}</div>
-                        <div className="ticket-meta">
-                          <span className="badge muted">{item.type}</span>
-                        </div>
-                      </div>
-                    ))}
+          return (
+            <div key={day} style={{ border: '1px solid #ddd', padding: 8 }}>
+              <h4>{header}</h4>
+              {(grouped.get(day) ?? []).map((item) => (
+                <article key={item.id} style={{ border: '1px solid #aaa', padding: 6, marginBottom: 6 }}>
+                  <div>
+                    {item.time} · <b>{item.status_label}</b>
+                  </div>
+                  <div>{item.customer_name}</div>
+                  <div>
+                    {item.bairro}/{item.cidade}
+                  </div>
+                  <div>
+                    <small>{item.type}</small>
                   </div>
                 </article>
-              )
-            })}
-          </div>
-          {items.length === 0 && <p className="empty">Nenhuma OS encontrada</p>}
-        </>
-      )}
+              ))}
+            </div>
+          )
+        })}
+      </div>
+      {items.length === 0 && <p>Nenhuma OS encontrada no período.</p>}
     </section>
   )
 }
@@ -265,36 +235,33 @@ function MaintenancesPanel({ items, loading }: { items: DashboardItem[]; loading
         <button className={`btn ${tab === 'scheduled' ? 'primary' : ''}`} onClick={() => setTab('scheduled')}>Agendadas</button>
         <button className={`btn ${tab === 'done' ? 'primary' : ''}`} onClick={() => setTab('done')}>Finalizadas</button>
       </div>
-
-      {loading ? (
-        <div className="skeleton table-skeleton" />
-      ) : filtered.length === 0 ? (
-        <p className="empty">Nenhuma OS encontrada</p>
+      {filtered.length === 0 ? (
+        <p>Nenhuma OS encontrada no período.</p>
       ) : (
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Data</th>
-                <th>Hora</th>
-                <th>Cliente</th>
-                <th>Bairro/Cidade</th>
-                <th>Status</th>
+        <table border={1} cellPadding={6} style={{ width: '100%', marginTop: 8 }}>
+          <thead>
+            <tr>
+              <th>Data</th>
+              <th>Hora</th>
+              <th>Cliente</th>
+              <th>Bairro/Cidade</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.map((item) => (
+              <tr key={item.id}>
+                <td>{dateFormatter.format(parseISODate(item.date))}</td>
+                <td>{item.time}</td>
+                <td>{item.customer_name}</td>
+                <td>
+                  {item.bairro}/{item.cidade}
+                </td>
+                <td>{item.status_label}</td>
               </tr>
-            </thead>
-            <tbody>
-              {filtered.map((item) => (
-                <tr key={item.id}>
-                  <td>{dateFormatter.format(parseISODate(item.date))}</td>
-                  <td>{item.time || '--:--'}</td>
-                  <td>{item.customer_name || '-'}</td>
-                  <td>{item.bairro || '-'} / {item.cidade || '-'}</td>
-                  <td><span className={statusBadgeClass(item.status_code)}>{item.status_label || item.status_code}</span></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+            ))}
+          </tbody>
+        </table>
       )}
     </section>
   )
@@ -311,13 +278,12 @@ function App() {
   const [editingFilter, setEditingFilter] = useState<SavedFilter | null>(null)
   const [startDate, setStartDate] = useState(todayISO)
   const [days, setDays] = useState(7)
-  const [loading, setLoading] = useState(false)
 
   const loadSaved = () => {
     fetch(`${API}/filters?scope=agenda_week`).then((res) => res.json()).then(setSavedFilters)
   }
 
-  const loadDashboard = async (filter?: FilterDefinition, filterId?: string, selectedStart?: string, selectedDays?: number) => {
+  const loadDashboard = (filter?: FilterDefinition, filterId?: string, selectedStart?: string, selectedDays?: number) => {
     const effectiveStart = selectedStart ?? startDate
     const effectiveDays = selectedDays ?? days
     const maintenanceTo = addDays(effectiveStart, effectiveDays - 1)
@@ -370,7 +336,11 @@ function App() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name, scope, definition_json: filter }),
-    }).then((res) => res.json()).then((created: SavedFilter) => setSavedFilters((prev) => [created, ...prev]))
+    })
+      .then((res) => res.json())
+      .then((created: SavedFilter) => {
+        setSavedFilters((prev) => [created, ...prev])
+      })
   }
 
   const updateFilter = (id: string, name: string, scope: 'agenda_week' | 'maintenances', filter: FilterDefinition) => {
@@ -378,79 +348,86 @@ function App() {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name, scope, definition_json: filter }),
-    }).then((res) => res.json()).then((updated: SavedFilter) => {
-      setSavedFilters((prev) => prev.map((item) => (item.id === id ? updated : item)))
-      setSelectedFilterId(updated.id)
-      setEditingFilter(updated)
-      setCurrentFilter(updated.definition_json)
     })
+      .then((res) => res.json())
+      .then((updated: SavedFilter) => {
+        setSavedFilters((prev) => prev.map((item) => (item.id === id ? updated : item)))
+        setSelectedFilterId(updated.id)
+        setEditingFilter(updated)
+        setCurrentFilter(updated.definition_json)
+      })
   }
 
   return (
-    <main className="layout">
-      <aside className="sidebar">
-        <h1>Softhub</h1>
-        <nav>
-          <a href="#">Dashboard</a>
-          <a href="#">Agenda</a>
-          <a href="#">Manutenções</a>
-        </nav>
-      </aside>
+    <main style={{ fontFamily: 'sans-serif', margin: 16 }}>
+      <h1>Softhub Dashboard</h1>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+        <select value={selectedFilterId} onChange={(e) => onSelectSaved(e.target.value)}>
+          <option value="">Sem filtro salvo</option>
+          {savedFilters.map((filter) => (
+            <option key={filter.id} value={filter.id}>
+              {filter.name}
+            </option>
+          ))}
+        </select>
+        <button
+          onClick={() => {
+            setEditingFilter(null)
+            setBuilderOpen(true)
+          }}
+        >
+          Novo filtro
+        </button>
+        {selectedFilterId && (
+          <button
+            onClick={() => {
+              const selected = savedFilters.find((item) => item.id === selectedFilterId)
+              if (!selected) return
+              setEditingFilter(selected)
+              setCurrentFilter(selected.definition_json)
+              setBuilderOpen(true)
+            }}
+          >
+            Editar filtro
+          </button>
+        )}
+        <button onClick={() => saveFilter('Filtro ad-hoc', 'agenda_week', currentFilter)}>Salvar</button>
+      </div>
 
-      <section className="content">
-        <header className="topbar">
-          <div>
-            <h2>Painel Operacional</h2>
-            <p>Agenda iniciando em: {dateFormatter.format(parseISODate(startDate))}</p>
-          </div>
-          <div className="controls-row">
-            <select value={selectedFilterId} onChange={(e) => onSelectSaved(e.target.value)}>
-              <option value="">Sem filtro salvo</option>
-              {savedFilters.map((filter) => (
-                <option key={filter.id} value={filter.id}>{filter.name}</option>
-              ))}
-            </select>
-            <button className="btn" onClick={() => { setEditingFilter(null); setBuilderOpen(true) }}>Novo filtro</button>
-            {selectedFilterId && <button className="btn" onClick={() => { const selected = savedFilters.find((item) => item.id === selectedFilterId) ?? null; setEditingFilter(selected); if (selected) setCurrentFilter(selected.definition_json); setBuilderOpen(true) }}>Editar filtro</button>}
-          </div>
-        </header>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 12, alignItems: 'center' }}>
+        <label>
+          Início:{' '}
+          <input
+            type="date"
+            value={startDate}
+            onChange={(e) => {
+              const value = e.target.value
+              setStartDate(value)
+              loadDashboard(selectedFilterId ? undefined : currentFilter, selectedFilterId || undefined, value, days)
+            }}
+          />
+        </label>
+        <label>
+          Dias:{' '}
+          <select
+            value={days}
+            onChange={(e) => {
+              const value = Number(e.target.value)
+              setDays(value)
+              loadDashboard(selectedFilterId ? undefined : currentFilter, selectedFilterId || undefined, startDate, value)
+            }}
+          >
+            <option value={7}>7</option>
+            <option value={10}>10</option>
+            <option value={14}>14</option>
+          </select>
+        </label>
+      </div>
 
-        <div className="controls-row block">
-          <label>
-            Início
-            <input
-              type="date"
-              value={startDate}
-              onChange={(e) => {
-                const value = e.target.value
-                setStartDate(value)
-                loadDashboard(selectedFilterId ? undefined : currentFilter, selectedFilterId || undefined, value, days)
-              }}
-            />
-          </label>
-          <label>
-            Dias
-            <select
-              value={days}
-              onChange={(e) => {
-                const value = Number(e.target.value)
-                setDays(value)
-                loadDashboard(selectedFilterId ? undefined : currentFilter, selectedFilterId || undefined, startDate, value)
-              }}
-            >
-              <option value={7}>7</option>
-              <option value={10}>10</option>
-              <option value={14}>14</option>
-            </select>
-          </label>
-        </div>
-
-        <div className="dashboard-grid">
-          <AgendaWeekBoard items={agenda} startDate={startDate} days={days} loading={loading} />
-          <MaintenancesPanel items={maintenances} loading={loading} />
-        </div>
-      </section>
-
+      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 16 }}>
+        <AgendaWeekBoard items={agenda} startDate={startDate} days={days} />
+        <MaintenancesPanel items={maintenances} />
+      </div>
       <FilterBuilder
         open={builderOpen}
         value={currentFilter}
