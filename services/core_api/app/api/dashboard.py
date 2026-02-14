@@ -54,10 +54,11 @@ def get_summary(
     start: str | None = Query(default=None),
     days: int = Query(default=7, ge=1, le=31),
     today: str | None = Query(default=None),
+    tz: str | None = Query(default='America/Sao_Paulo'),
     filter_id: str | None = Query(default=None),
     filter_json: str | None = Query(default=None),
     adapter=Depends(get_ixc_adapter),
 ):
     definition = _resolve_definition(filter_id, filter_json)
     date_start, _ = agenda_week_range(start, days)
-    return build_dashboard_summary(adapter, date_start, days, definition, today=today)
+    return build_dashboard_summary(adapter, date_start, days, definition, today=today, tz_name=tz)

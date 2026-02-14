@@ -129,6 +129,8 @@ class MockIXCAdapter:
                     'id_assunto': assuntos[idx % len(assuntos)],
                     'status': statuses[idx % len(statuses)],
                     'data_agenda': f"{d.strftime('%Y-%m-%d')} {8 + (idx % 10):02d}:{(idx % 2) * 30:02d}:00",
+                    'data_abertura': f"{(d - timedelta(days=1)).strftime('%Y-%m-%d')} 09:00:00",
+                    'data_fechamento': f"{(d + timedelta(days=1)).strftime('%Y-%m-%d')} 18:00:00" if statuses[idx % len(statuses)] == 'F' else None,
                     'endereco': f'Rua {idx}, {10 + idx}',
                     'bairro': ['Centro', 'Praia', 'Jardim', 'Industrial'][idx % 4],
                     'protocolo': f'P{10000+idx}',
@@ -143,6 +145,8 @@ class MockIXCAdapter:
                 'su_oss_chamado.status': 'status',
                 'su_oss_chamado.id_assunto': 'id_assunto',
                 'su_oss_chamado.id_cliente': 'id_cliente',
+                'su_oss_chamado.data_abertura': 'data_abertura',
+                'su_oss_chamado.data_fechamento': 'data_fechamento',
             }
             v = str(row.get(field_map.get(tb, ''), ''))
             if op == '=':
