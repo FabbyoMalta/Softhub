@@ -30,6 +30,13 @@ class SavedFilter(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
 
 
+class Setting(Base):
+    __tablename__ = 'settings'
+
+    key: Mapped[str] = mapped_column(String(128), primary_key=True)
+    value_json: Mapped[dict] = mapped_column(JSON, nullable=False)
+
+
 settings = get_settings()
 engine = create_engine(settings.database_url, future=True)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
