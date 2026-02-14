@@ -68,11 +68,24 @@ class IXCClient:
                     )
 
                 response.raise_for_status()
-                data = response.json()
-                if data.get('type') == 'error':
+
+                # Diagnóstico quando o IXC retorna HTML/vazio/texto
+                ct = response.headers.get("content-type", "")
+                text = response.text
+                try:
+                    data = response.json()
+                except Exception as exc:
+                    raise IXCClientError(
+                        f"IXC returned non-JSON for endpoint={endpoint} "
+                        f"url={url} status={response.status_code} content-type={ct} "
+                        f"body_start={text[:300]!r}"
+                    ) from exc
+
+                if isinstance(data, dict) and data.get("type") == "error":
                     raise IXCClientError(
                         f"IXC logical error for {endpoint} on attempt {attempt}: {data.get('message', 'unknown error')}"
                     )
+
                 return data
             except (httpx.TimeoutException, httpx.NetworkError, IXCClientError) as exc:
                 if attempt >= self.max_retries:

@@ -16,14 +16,11 @@ services:
 
   core_api:
     build: ./services/core_api
+    env_file:
+      - .env
     environment:
       DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres:5432/softhub
       REDIS_URL: redis://redis:6379/0
-      IXC_MODE: mock
-      IXC_HOST: mock.ixc.local
-      IXC_USER: usuario
-      IXC_TOKEN: token
-      IXC_VERIFY_TLS: 'true'
     depends_on:
       - postgres
       - redis
