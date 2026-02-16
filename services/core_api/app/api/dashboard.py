@@ -84,7 +84,7 @@ async def get_summary(
     filter_json: str | None = Query(default=None),
     response: Response = None,
     adapter=Depends(get_ixc_adapter),
-):
+): 
     definition = _resolve_definition(filter_id, filter_json)
     date_start, _ = agenda_week_range(start, days)
     filter_hash = stable_json_hash(definition)
