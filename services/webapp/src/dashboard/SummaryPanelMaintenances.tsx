@@ -30,7 +30,7 @@ export function SummaryPanelMaintenances({ days, data, totalOSPeriod }: { days: 
       </div>
 
       <div className="mb-4 grid grid-cols-1 gap-3 md:grid-cols-2">
-        <MetricCard title="Abertas total" value={data.openTotal} accent="amber" helper="Backlog atual" />
+        <MetricCard title="Abertas total (exceto agendadas)" value={data.openTotal} accent="amber" helper="Backlog atual" />
         <MetricCard title="Total OS período" value={totalOSPeriod} accent="slate" helper="Instalações + Manutenções" />
       </div>
 
