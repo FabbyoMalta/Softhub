@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { BrowserRouter, NavLink, Navigate, Outlet, Route, Routes } from 'react-router-dom'
 import './styles.css'
+import { DashboardPage } from './dashboard/DashboardPage'
 
 type DashboardItem = {
   id: string
@@ -30,6 +31,8 @@ type SavedFilter = { id: string; name: string; scope: FilterScope; definition_js
 
 type AppSettings = {
   default_filters: { agenda: string | null; manutencoes: string | null }
+  installation_subject_ids: string[]
+  maintenance_subject_ids: string[]
   subject_groups: { instalacao: string[]; manutencao: string[]; outros: string[] }
   agenda_capacity: Record<'1' | '2', Record<'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun', number>>
   filiais: Record<'1' | '2', string>
@@ -39,6 +42,9 @@ type DashboardSummary = {
   period: { start: string; end: string }
   instalacoes: { agendadas_hoje: number; finalizadas_hoje: number; total_periodo: number }
   manutencoes: { abertas_total: number; abertas_hoje: number; finalizadas_hoje: number; total_periodo: number }
+  installations_scheduled_by_day: Array<{ date: string; count: number }>
+  maint_opened_by_day: Array<{ date: string; count: number }>
+  maint_closed_by_day: Array<{ date: string; count: number }>
 }
 
 const API = 'http://localhost:8000'
@@ -128,14 +134,6 @@ function useSavedFilters(scope: FilterScope) {
   return { filters, setFilters, reload }
 }
 
-function DashboardPage() {
-  const today = toISODate(new Date())
-  const [startDate, setStartDate] = useState(today)
-  const [days, setDays] = useState(7)
-  const [summary, setSummary] = useState<DashboardSummary | null>(null)
-  useEffect(() => { fetch(`${API}/dashboard/summary?${new URLSearchParams({ start: startDate, days: String(days) })}`).then((r) => r.json()).then(setSummary) }, [startDate, days])
-  return <section><header className="topbar"><h2>Dashboard</h2><p>Apenas indicadores sumarizados</p></header><PeriodControls startDate={startDate} days={days} onStartDate={setStartDate} onDays={setDays} /><div className="kpi-grid">{summary && [['Inst. agendadas hoje', summary.instalacoes.agendadas_hoje], ['Inst. finalizadas hoje', summary.instalacoes.finalizadas_hoje], ['Inst. total período', summary.instalacoes.total_periodo], ['Manut. abertas total', summary.manutencoes.abertas_total], ['Manut. abertas hoje', summary.manutencoes.abertas_hoje], ['Manut. finalizadas hoje', summary.manutencoes.finalizadas_hoje], ['Total OS período', summary.instalacoes.total_periodo + summary.manutencoes.total_periodo]].map(([label, value]) => <article key={label as string} className="card"><h4>{label}</h4><p>{value as number}</p><span className="badge muted">{summary.period.start} → {summary.period.end}</span></article>)}</div></section>
-}
 
 function AgendaPage() {
   const today = toISODate(new Date())
@@ -230,7 +228,7 @@ function Layout() {
 }
 
 function AppRoutes() {
-  return <BrowserRouter><Routes><Route path="/" element={<Layout />}><Route index element={<Navigate to="/dashboard" replace />} /><Route path="dashboard" element={<DashboardPage />} /><Route path="agenda" element={<AgendaPage />} /><Route path="manutencoes" element={<MaintenancesPage />} /><Route path="admin" element={<AdminPage />} /></Route></Routes></BrowserRouter>
+  return <BrowserRouter><Routes><Route path="/" element={<Layout />}><Route index element={<Navigate to="/dashboard" replace />} /><Route path="dashboard" element={<DashboardPage apiBase={API} />} /><Route path="agenda" element={<AgendaPage />} /><Route path="manutencoes" element={<MaintenancesPage />} /><Route path="admin" element={<AdminPage />} /></Route></Routes></BrowserRouter>
 }
 
 createRoot(document.getElementById('root')!).render(<AppRoutes />)
