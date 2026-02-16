@@ -9,6 +9,8 @@ from app.db import SessionLocal, Setting
 SETTINGS_KEY = 'app_settings'
 DEFAULT_SETTINGS = {
     'default_filters': {'agenda': None, 'manutencoes': None},
+    'installation_subject_ids': ['1', '15'],
+    'maintenance_subject_ids': ['17', '34', '31'],
     'subject_groups': {'instalacao': ['1'], 'manutencao': ['17', '34', '31'], 'outros': []},
     'agenda_capacity': {
         '1': {'mon': 5, 'tue': 5, 'wed': 5, 'thu': 5, 'fri': 5, 'sat': 0, 'sun': 0},
@@ -30,6 +32,14 @@ def _merge_defaults(payload: dict | None) -> dict:
             value = incoming['subject_groups'].get(key)
             if isinstance(value, list):
                 merged['subject_groups'][key] = [str(x) for x in value]
+
+    installation_ids = incoming.get('installation_subject_ids')
+    if isinstance(installation_ids, list):
+        merged['installation_subject_ids'] = [str(x) for x in installation_ids]
+
+    maintenance_ids = incoming.get('maintenance_subject_ids')
+    if isinstance(maintenance_ids, list):
+        merged['maintenance_subject_ids'] = [str(x) for x in maintenance_ids]
 
     if isinstance(incoming.get('filiais'), dict):
         for key in ('1', '2'):

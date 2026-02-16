@@ -21,6 +21,8 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres:5432/softhub
       REDIS_URL: redis://redis:6379/0
+      SOFTHUB_PROFILE: ${SOFTHUB_PROFILE:-0}
+      DASHBOARD_CACHE_TTL_S: ${DASHBOARD_CACHE_TTL_S:-60}
     depends_on:
       - postgres
       - redis
@@ -38,3 +40,6 @@ services:
       - core_api
     ports:
       - '5173:5173'
+    volumes:
+      - ./services/webapp:/app
+      - /app/node_modules
