@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.models.dashboard import DashboardItem, DashboardSummary
 from app.services.adapters import get_ixc_adapter
-from app.services.dashboard import agenda_week_range, build_dashboard_summary, fetch_dashboard_items, maintenances_range
+from app.services.dashboard import agenda_week_range, build_dashboard_summary, fetch_dashboard_items, fetch_maintenance_items, maintenances_range
 from app.services.filters import get_saved_filter_definition
 
 router = APIRouter(prefix='/dashboard', tags=['dashboard'])
@@ -40,13 +40,16 @@ def get_agenda_week(
 def get_maintenances(
     from_: str | None = Query(default=None, alias='from'),
     to: str | None = Query(default=None),
+    tab: str = Query(default='open', pattern='^(open|scheduled|done)$'),
     filter_id: str | None = Query(default=None),
     filter_json: str | None = Query(default=None),
     adapter=Depends(get_ixc_adapter),
 ):
     definition = _resolve_definition(filter_id, filter_json)
-    date_start, date_end = maintenances_range(from_, to)
-    return fetch_dashboard_items(adapter, 'maintenances', date_start, date_end, definition)
+    if from_ or to:
+        date_start, date_end = maintenances_range(from_, to)
+        return fetch_maintenance_items(adapter, definition, tab=tab, date_start=date_start, date_end=date_end)
+    return fetch_maintenance_items(adapter, definition, tab=tab)
 
 
 @router.get('/summary', response_model=DashboardSummary)

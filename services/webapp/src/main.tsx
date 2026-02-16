@@ -106,13 +106,11 @@ function AgendaBoard({ items, startDate, days, loading }: { items: DashboardItem
   return <section className="panel"><header className="panel-header"><h2>Agenda técnica</h2><p>{buildPeriodLabel(startDate, days)}</p></header>{loading ? <div className="agenda-grid">{dates.map((d) => <div key={d} className="skeleton day-skeleton" />)}</div> : <div className="agenda-grid">{dates.map((day) => <article key={day} className="day-card"><h4>{dayLabelFormatter.format(parseISODate(day))} {dateFormatter.format(parseISODate(day))}</h4><div className="day-list">{(grouped[day] ?? []).map((item) => <div key={item.id} className="ticket-card"><div className="ticket-head"><strong>{item.time || '--:--'}</strong><span className={statusBadgeClass(item.status_code)}>{item.status_label || item.status_code}</span></div><div>{item.customer_name || 'Cliente não informado'}</div><small>{item.bairro || '-'} · {item.cidade || '-'}</small></div>)}</div></article>)}</div>}</section>
 }
 
-function MaintenancesTable({ items, loading }: { items: DashboardItem[]; loading: boolean }) {
-  const [tab, setTab] = useState<'open' | 'scheduled' | 'done'>('open')
+function MaintenancesTable({ items, loading, tab, onTab }: { items: DashboardItem[]; loading: boolean; tab: 'open' | 'scheduled' | 'done'; onTab: (t: 'open' | 'scheduled' | 'done') => void }) {
   const [selected, setSelected] = useState<DashboardItem | null>(null)
-  const filtered = items.filter((i) => tab === 'open' ? OPEN_LIKE.includes(i.status_code) : tab === 'scheduled' ? SCHEDULED.includes(i.status_code) : DONE.includes(i.status_code))
   return <section className="panel"><header className="panel-header"><h2>Manutenções</h2></header>
-    <div className="tab-row"><button className={`btn ${tab === 'open' ? 'primary' : ''}`} onClick={() => setTab('open')}>Abertas/Andamento</button><button className={`btn ${tab === 'scheduled' ? 'primary' : ''}`} onClick={() => setTab('scheduled')}>Agendadas</button><button className={`btn ${tab === 'done' ? 'primary' : ''}`} onClick={() => setTab('done')}>Finalizadas</button></div>
-    {loading ? <div className="skeleton table-skeleton" /> : <div className="table-wrap"><table><thead><tr><th>Data</th><th>Cliente</th><th>Status</th><th /></tr></thead><tbody>{filtered.map((item) => <tr key={item.id}><td>{dateFormatter.format(parseISODate(item.date))}</td><td>{item.customer_name || '-'}</td><td><span className={statusBadgeClass(item.status_code)}>{item.status_label || item.status_code}</span></td><td><button className="btn" onClick={() => setSelected(item)}>Detalhes</button></td></tr>)}</tbody></table></div>}
+    <div className="tab-row"><button className={`btn ${tab === 'open' ? 'primary' : ''}`} onClick={() => onTab('open')}>Abertas/Andamento</button><button className={`btn ${tab === 'scheduled' ? 'primary' : ''}`} onClick={() => onTab('scheduled')}>Agendadas</button><button className={`btn ${tab === 'done' ? 'primary' : ''}`} onClick={() => onTab('done')}>Finalizadas</button></div>
+    {loading ? <div className="skeleton table-skeleton" /> : <div className="table-wrap"><table><thead><tr><th>Data</th><th>Cliente</th><th>Status</th><th /></tr></thead><tbody>{items.map((item) => <tr key={item.id}><td>{item.date ? dateFormatter.format(parseISODate(item.date)) : '-'}</td><td>{item.customer_name || '-'}</td><td><span className={statusBadgeClass(item.status_code)}>{item.status_label || item.status_code}</span></td><td><button className="btn" onClick={() => setSelected(item)}>Detalhes</button></td></tr>)}</tbody></table></div>}
     {selected && <div className="modal-backdrop" onClick={() => setSelected(null)}><div className="modal-panel" onClick={(e) => e.stopPropagation()}><h3>OS {selected.id}</h3><p>Cliente: {selected.customer_name}</p><p>Protocolo: {selected.protocolo || '-'}</p><p>Local: {selected.bairro} / {selected.cidade}</p><button className="btn ghost" onClick={() => setSelected(null)}>Fechar</button></div></div>}
   </section>
 }
@@ -174,9 +172,14 @@ function MaintenancesPage() {
   const [startDate, setStartDate] = useState(today)
   const [days, setDays] = useState(7)
   const [loading, setLoading] = useState(false)
-  const load = (filter?: FilterDefinition, filterId?: string, s = startDate, d = days) => {
+  const [tab, setTab] = useState<'open' | 'scheduled' | 'done'>('open')
+  const [mode, setMode] = useState<'queue' | 'period'>('queue')
+
+  const load = (filter?: FilterDefinition, filterId?: string, s = startDate, d = days, activeTab = tab, activeMode = mode) => {
     const to = addDays(s, d - 1)
-    const params = filterId ? new URLSearchParams({ from: s, to, filter_id: filterId }) : new URLSearchParams({ from: s, to, filter_json: JSON.stringify({ ...(filter || currentFilter), category: 'manutencao' }) })
+    const params = filterId
+      ? new URLSearchParams({ tab: activeTab, ...(activeMode === 'period' ? { from: s, to } : {}), filter_id: filterId })
+      : new URLSearchParams({ tab: activeTab, ...(activeMode === 'period' ? { from: s, to } : {}), filter_json: JSON.stringify({ ...(filter || currentFilter), category: 'manutencao' }) })
     setLoading(true)
     fetch(`${API}/dashboard/maintenances?${params}`).then((r) => r.json()).then(setItems).finally(() => setLoading(false))
   }
@@ -184,6 +187,15 @@ function MaintenancesPage() {
   const save = (name: string, scope: FilterScope, definition_json: FilterDefinition) => fetch(`${API}/filters`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, scope, definition_json }) }).then((r) => r.json()).then((f: SavedFilter) => setFilters((prev) => [f, ...prev]))
   const update = (id: string, name: string, scope: FilterScope, definition_json: FilterDefinition) => fetch(`${API}/filters/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, scope, definition_json }) }).then((r) => r.json()).then((u: SavedFilter) => setFilters((prev) => prev.map((f) => f.id === id ? u : f)))
   return <section><header className="topbar"><h2>Manutenções</h2><div className="controls-row"><select value={selectedFilterId} onChange={(e) => { const id = e.target.value; setSelectedFilterId(id); const saved = filters.find((f) => f.id === id) || null; setEditing(saved); if (saved) load(undefined, id); else load(currentFilter) }}><option value="">Sem filtro salvo</option>{filters.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}</select><button className="btn" onClick={() => { setEditing(null); setBuilderOpen(true) }}>Novo filtro</button>{selectedFilterId && <button className="btn" onClick={() => setBuilderOpen(true)}>Salvar/Editar</button>}</div></header><PeriodControls startDate={startDate} days={days} onStartDate={(d) => { setStartDate(d); load(undefined, selectedFilterId || undefined, d, days) }} onDays={(d) => { setDays(d); load(undefined, selectedFilterId || undefined, startDate, d) }} /><MaintenancesTable items={items} loading={loading} /><FilterBuilder open={builderOpen} value={currentFilter} editingFilter={editing} onClose={() => setBuilderOpen(false)} onApply={(f) => { setCurrentFilter(f); setSelectedFilterId(''); load(f) }} onSave={save} onUpdate={update} /></section>
+}
+
+  useEffect(() => { load({ category: 'manutencao' }, '', today, 7, 'open', 'queue') }, [])
+  useEffect(() => { load(undefined, selectedFilterId || undefined, startDate, days, tab, mode) }, [tab, mode])
+
+  const save = (name: string, scope: FilterScope, definition_json: FilterDefinition) => fetch(`${API}/filters`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, scope, definition_json }) }).then((r) => r.json()).then((f: SavedFilter) => setFilters((prev) => [f, ...prev]))
+  const update = (id: string, name: string, scope: FilterScope, definition_json: FilterDefinition) => fetch(`${API}/filters/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, scope, definition_json }) }).then((r) => r.json()).then((u: SavedFilter) => setFilters((prev) => prev.map((f) => f.id === id ? u : f)))
+
+  return <section><header className="topbar"><h2>Manutenções</h2><div className="controls-row"><select value={selectedFilterId} onChange={(e) => { const id = e.target.value; setSelectedFilterId(id); const saved = filters.find((f) => f.id === id) || null; setEditing(saved); if (saved) load(undefined, id); else load(currentFilter) }}><option value="">Sem filtro salvo</option>{filters.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}</select><select value={mode} onChange={(e) => setMode(e.target.value as 'queue' | 'period')}><option value="queue">Fila (todas abertas)</option><option value="period">Por período</option></select><button className="btn" onClick={() => { setEditing(null); setBuilderOpen(true) }}>Novo filtro</button>{selectedFilterId && <button className="btn" onClick={() => setBuilderOpen(true)}>Salvar/Editar</button>}</div></header>{mode === 'period' && <PeriodControls startDate={startDate} days={days} onStartDate={(d) => { setStartDate(d); load(undefined, selectedFilterId || undefined, d, days, tab, mode) }} onDays={(d) => { setDays(d); load(undefined, selectedFilterId || undefined, startDate, d, tab, mode) }} />}<MaintenancesTable items={items} loading={loading} tab={tab} onTab={setTab} /><FilterBuilder open={builderOpen} value={currentFilter} editingFilter={editing} onClose={() => setBuilderOpen(false)} onApply={(f) => { setCurrentFilter(f); setSelectedFilterId(''); load(f) }} onSave={save} onUpdate={update} /></section>
 }
 
 const AdminOnly = ({ children }: { children: React.ReactNode }) => <>{children}</>

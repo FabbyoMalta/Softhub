@@ -23,6 +23,11 @@ STATUS_GROUPS = {
     'scheduled': ['AG', 'RAG', 'AS', 'DS', 'EX'],
     'done': ['F'],
 }
+MAINTENANCE_TAB_STATUS = {
+    'open': ['A', 'AN', 'EN', 'AS', 'DS', 'EX', 'AG', 'RAG'],
+    'scheduled': ['AG', 'RAG'],
+    'done': ['F'],
+}
 INSTALL_ASSUNTOS = {'1'}
 MAINTENANCE_ASSUNTOS = {'17', '34', '31'}
 DEFAULT_SUMMARY_TZ = 'America/Sao_Paulo'
@@ -167,6 +172,44 @@ def _fetch_order_rows(
     return rows
 
 
+def _fetch_order_rows_without_date(
+    adapter: IXCAdapter,
+    statuses: list[str],
+    assunto_ids: list[str],
+) -> list[dict[str, Any]]:
+    status_list = statuses or [None]
+    assunto_list = assunto_ids or [None]
+    grids: list[list[dict[str, str]]] = []
+    for status in status_list:
+        for assunto in assunto_list:
+            grid: list[dict[str, str]] = []
+            if status:
+                grid.append({'TB': TB_OS_STATUS, 'OP': '=', 'P': status})
+            if assunto:
+                grid.append({'TB': TB_OS_ID_ASSUNTO, 'OP': '=', 'P': assunto})
+            grids.append(grid)
+
+    seen: set[str] = set()
+    rows: list[dict[str, Any]] = []
+    for grid in grids:
+        for row in adapter.list_service_orders(grid):
+            key = str(row.get('id') or '')
+            if key and key not in seen:
+                seen.add(key)
+                rows.append(row)
+    return rows
+
+
+def _sort_rows(rows: list[dict[str, Any]], field: str, reverse: bool = False) -> list[dict[str, Any]]:
+    def key_fn(row: dict[str, Any]):
+        dt = _parse_dt(row.get(field))
+        if dt is None:
+            return datetime.max if not reverse else datetime.min
+        return dt
+
+    return sorted(rows, key=key_fn, reverse=reverse)
+
+
 def fetch_dashboard_items(
     adapter: IXCAdapter,
     scope: str,
@@ -183,6 +226,41 @@ def fetch_dashboard_items(
     ids = sorted({str(r.get('id_cliente')) for r in rows if r.get('id_cliente')})
     clientes = adapter.list_clientes_by_ids(ids) if ids else {}
 
+    return [normalize_row(r, clientes.get(str(r.get('id_cliente') or ''))) for r in rows]
+
+
+def fetch_maintenance_items(
+    adapter: IXCAdapter,
+    definition_json: dict[str, Any] | None,
+    tab: str = 'open',
+    date_start: date | None = None,
+    date_end: date | None = None,
+) -> list[dict[str, Any]]:
+    definition = resolve_definition(definition_json, 'maintenances')
+    assunto_ids = [str(x) for x in (definition.get('assunto_ids') or sorted(MAINTENANCE_ASSUNTOS))]
+    statuses = MAINTENANCE_TAB_STATUS.get(tab, MAINTENANCE_TAB_STATUS['open'])
+
+    selected_statuses = {str(s) for s in definition.get('status_codes') or []}
+    if selected_statuses:
+        statuses = [status for status in statuses if status in selected_statuses]
+
+    if date_start and date_end:
+        if tab == 'done':
+            rows = _fetch_order_rows(adapter, date_start, date_end, statuses, assunto_ids, date_field='su_oss_chamado.data_fechamento')
+        elif tab == 'open':
+            rows = _fetch_order_rows(adapter, date_start, date_end, statuses, assunto_ids, date_field='su_oss_chamado.data_abertura')
+        else:
+            rows = _fetch_order_rows(adapter, date_start, date_end, statuses, assunto_ids, date_field='su_oss_chamado.data_agenda')
+    else:
+        rows = _fetch_order_rows_without_date(adapter, statuses, assunto_ids)
+
+    if tab == 'done':
+        rows = _sort_rows(rows, 'data_fechamento', reverse=True)
+    elif tab == 'open':
+        rows = _sort_rows(rows, 'data_abertura', reverse=False)
+
+    ids = sorted({str(r.get('id_cliente')) for r in rows if r.get('id_cliente')})
+    clientes = adapter.list_clientes_by_ids(ids) if ids else {}
     return [normalize_row(r, clientes.get(str(r.get('id_cliente') or ''))) for r in rows]
 
 

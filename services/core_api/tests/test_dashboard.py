@@ -3,6 +3,7 @@ from datetime import date
 from fastapi.testclient import TestClient
 
 from app.main import app
+from app.services.adapters import get_ixc_adapter
 from app.services import dashboard as dashboard_service
 
 client = TestClient(app)
@@ -179,7 +180,7 @@ def test_dashboard_summary_uses_correct_date_fields_per_type():
     assert summary['manutencoes']['abertas_total'] == 1
     assert summary['manutencoes']['abertas_hoje'] == 1
     assert summary['manutencoes']['finalizadas_hoje'] == 1
-    assert summary['manutencoes']['total_periodo'] == 2
+    assert summary['manutencoes']['total_periodo'] == 1
 
 
 def test_dashboard_summary_fallbacks_to_server_local_date_when_tz_missing():
@@ -192,3 +193,56 @@ def test_dashboard_summary_fallbacks_to_server_local_date_when_tz_missing():
         tz_name=None,
     )
     assert summary['period']['start'] == '2025-01-01'
+
+
+class _QueueMaintenanceAdapter:
+    def list_service_orders(self, grid_filters):
+        row = {
+            'id': 'M-QUEUE-1',
+            'id_cliente': '900',
+            'id_assunto': '17',
+            'status': 'A',
+            'data_agenda': None,
+            'data_abertura': '2025-01-03 10:00:00',
+            'data_fechamento': None,
+            'bairro': 'Centro',
+            'endereco': 'Rua Teste',
+            'protocolo': 'PX-1',
+        }
+        field_map = {
+            'su_oss_chamado.status': 'status',
+            'su_oss_chamado.id_assunto': 'id_assunto',
+            'su_oss_chamado.data_abertura': 'data_abertura',
+            'su_oss_chamado.data_agenda': 'data_agenda',
+            'su_oss_chamado.data_fechamento': 'data_fechamento',
+        }
+
+        def match(flt):
+            tb, op, p = flt.get('TB'), flt.get('OP'), str(flt.get('P') or '')
+            value = str(row.get(field_map.get(tb, ''), '') or '')
+            if op == '=':
+                return value == p
+            if op == 'IN':
+                return value in [x.strip() for x in p.split(',') if x.strip()]
+            if op == '>=':
+                return value >= p
+            if op == '<=':
+                return value <= p
+            return True
+
+        return [row] if all(match(f) for f in grid_filters) else []
+
+    def list_clientes_by_ids(self, ids):
+        return {'900': {'nome': 'Cliente Fila', 'bairro': 'Centro', 'cidade': 'Vitória'}}
+
+
+def test_maintenances_queue_mode_returns_open_without_data_agenda():
+    app.dependency_overrides[get_ixc_adapter] = lambda: _QueueMaintenanceAdapter()
+    try:
+        response = client.get('/dashboard/maintenances', params={'tab': 'open'})
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data) == 1
+        assert data[0]['id'] == 'M-QUEUE-1'
+    finally:
+        app.dependency_overrides.pop(get_ixc_adapter, None)
