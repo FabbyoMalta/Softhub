@@ -108,6 +108,7 @@ def test_saved_filters_update():
 def test_dashboard_summary_returns_expected_shape():
     response = client.get('/dashboard/summary', params={'start': '2025-01-01', 'days': 7, 'today': '2025-01-02'})
     assert response.status_code == 200
+    assert response.headers.get('x-cache') in {'MISS', 'HIT'}
     data = response.json()
     assert data['period']['start'] == '2025-01-01'
     assert data['period']['end'] == '2025-01-07'
@@ -169,6 +170,20 @@ def test_dashboard_summary_opened_today_uses_data_abertura_and_ignores_status():
 def test_dashboard_summary_fallbacks_to_server_local_date_when_tz_missing():
     summary = dashboard_service.build_dashboard_summary(_SummaryAdapter([]), date(2025, 1, 1), 7, {}, today='2025-01-02', tz_name=None)
     assert summary['period']['start'] == '2025-01-01'
+
+
+class _NoCustomerLookupAdapter(_SummaryAdapter):
+    def list_clientes_by_ids(self, ids):
+        raise AssertionError('summary should not call list_clientes_by_ids')
+
+
+def test_dashboard_summary_does_not_lookup_customers():
+    rows = [
+        {'id': 'I-1', 'id_assunto': '1', 'status': 'AG', 'data_agenda': '2025-01-02 10:00:00', 'data_abertura': '2025-01-01 09:00:00', 'data_fechamento': None},
+        {'id': 'M-1', 'id_assunto': '17', 'status': 'A', 'data_agenda': None, 'data_abertura': '2025-01-02 08:00:00', 'data_fechamento': None},
+    ]
+    summary = dashboard_service.build_dashboard_summary(_NoCustomerLookupAdapter(rows), date(2025, 1, 1), 7, {}, today='2025-01-02', tz_name='America/Sao_Paulo')
+    assert summary['instalacoes']['agendadas_hoje'] == 1
 
 
 class _QueueMaintenanceAdapter:

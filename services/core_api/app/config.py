@@ -18,6 +18,8 @@ class Settings(BaseSettings):
 
     redis_url: str = Field(default='redis://redis:6379/0', alias='REDIS_URL')
     database_url: str = Field(default='postgresql+psycopg://postgres:postgres@postgres:5432/softhub', alias='DATABASE_URL')
+    softhub_profile: bool = Field(default=False, alias='SOFTHUB_PROFILE')
+    dashboard_cache_ttl_s: int = Field(default=60, alias='DASHBOARD_CACHE_TTL_S')
 
 
 @lru_cache
