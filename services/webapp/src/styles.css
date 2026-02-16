@@ -42,3 +42,12 @@ th, td { text-align: left; border-bottom: 1px solid #e2e8f0; padding: 10px 6px; 
 .skeleton { background: linear-gradient(90deg, #e2e8f0, #f1f5f9, #e2e8f0); height: 120px; border-radius: 8px; animation: pulse 1.4s infinite; }
 .table-skeleton { height: 220px; }
 @keyframes pulse { from { background-position: 0 0; } to { background-position: 220px 0; } }
+
+
+.day-level-green { background: #f0fdf4; border-color: #bbf7d0; }
+.day-level-yellow { background: #fefce8; border-color: #fde68a; }
+.day-level-red { background: #fef2f2; border-color: #fecaca; }
+.segmented { display: flex; gap: 6px; }
+.grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.capacity-table { width: 100%; border-collapse: collapse; }
+.capacity-table input { width: 100%; }

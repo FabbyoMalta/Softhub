@@ -5,7 +5,8 @@ from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from app.adapters.ixc_adapter import IXCAdapter
-from app.services.ixc_grid_builder import TB_OS_ID_ASSUNTO, TB_OS_STATUS, expand_os_query_grids
+from app.services.ixc_grid_builder import TB_OS_ID_ASSUNTO, TB_OS_ID_FILIAL, TB_OS_STATUS, expand_os_query_grids
+from app.services.settings import get_settings_payload
 
 STATUS_LABELS = {
     'A': 'Aberta',
@@ -31,6 +32,7 @@ MAINTENANCE_TAB_STATUS = {
 INSTALL_ASSUNTOS = {'1'}
 MAINTENANCE_ASSUNTOS = {'17', '34', '31'}
 DEFAULT_SUMMARY_TZ = 'America/Sao_Paulo'
+WEEKDAY_KEYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
 
 
 def parse_date_or_default(raw: str | None, default: date) -> date:
@@ -113,6 +115,7 @@ def normalize_row(row: dict[str, Any], customer: dict[str, Any] | None) -> dict[
         'assunto_id': assunto_id,
         'type': _infer_type(assunto_id),
         'id_cliente': str(row.get('id_cliente') or ''),
+        'id_filial': str(row.get('id_filial') or ''),
         'customer_name': _extract_customer_name(c),
         'phone': c.get('telefone') or c.get('whatsapp') or c.get('celular'),
         'address': row.get('endereco') or c.get('endereco'),
@@ -155,11 +158,15 @@ def _fetch_order_rows(
     statuses: list[str],
     assunto_ids: list[str],
     date_field: str = 'su_oss_chamado.data_agenda',
+    filial_id: str | None = None,
 ) -> list[dict[str, Any]]:
     if date_field == 'su_oss_chamado.data_agenda':
         grids = expand_os_query_grids(date_start, date_end, statuses, assunto_ids, use_in=False)
     else:
         grids = _build_grid_for_date_field(date_field, date_start, date_end, statuses, assunto_ids)
+
+    if filial_id:
+        grids = [grid + [{'TB': TB_OS_ID_FILIAL, 'OP': '=', 'P': filial_id}] for grid in grids]
 
     seen: set[str] = set()
     rows: list[dict[str, Any]] = []
@@ -216,17 +223,97 @@ def fetch_dashboard_items(
     date_start: date,
     date_end: date,
     definition_json: dict[str, Any] | None,
+    filial_id: str | None = None,
 ) -> list[dict[str, Any]]:
     definition = resolve_definition(definition_json, scope)
     statuses = [str(x) for x in definition.get('status_codes') or []]
     assunto_ids = [str(x) for x in definition.get('assunto_ids') or []]
 
-    rows = _fetch_order_rows(adapter, date_start, date_end, statuses, assunto_ids)
+    rows = _fetch_order_rows(adapter, date_start, date_end, statuses, assunto_ids, filial_id=filial_id)
 
     ids = sorted({str(r.get('id_cliente')) for r in rows if r.get('id_cliente')})
     clientes = adapter.list_clientes_by_ids(ids) if ids else {}
 
     return [normalize_row(r, clientes.get(str(r.get('id_cliente') or ''))) for r in rows]
+
+
+def _capacity_entry(limit: int, count: int) -> dict[str, Any]:
+    safe_limit = max(0, int(limit))
+    remaining = safe_limit - count
+    fill_ratio = 1.0 if safe_limit <= 0 and count > 0 else (0.0 if safe_limit <= 0 else count / safe_limit)
+    level = 'green'
+    if remaining <= 0 or fill_ratio >= 1.0:
+        level = 'red'
+    elif fill_ratio >= 0.8 and remaining > 0:
+        level = 'yellow'
+    return {
+        'limit': safe_limit,
+        'count': count,
+        'remaining': remaining,
+        'fill_ratio': round(fill_ratio, 2),
+        'level': level,
+    }
+
+
+def _build_day_capacity(items: list[dict[str, Any]], day: date, agenda_capacity: dict[str, dict[str, int]], filial_id: str | None) -> dict[str, Any]:
+    weekday = WEEKDAY_KEYS[day.weekday()]
+    counts = {'1': 0, '2': 0}
+    for item in items:
+        if item.get('type') != 'instalacao':
+            continue
+        item_filial = str(item.get('id_filial') or '')
+        if item_filial in counts:
+            counts[item_filial] += 1
+
+    limits = {
+        '1': int((agenda_capacity.get('1') or {}).get(weekday, 0) or 0),
+        '2': int((agenda_capacity.get('2') or {}).get(weekday, 0) or 0),
+    }
+
+    if filial_id in ('1', '2'):
+        entry = _capacity_entry(limits[filial_id], counts[filial_id])
+        return {'filial_1': entry if filial_id == '1' else _capacity_entry(0, 0), 'filial_2': entry if filial_id == '2' else _capacity_entry(0, 0), 'total': entry}
+
+    filial_1 = _capacity_entry(limits['1'], counts['1'])
+    filial_2 = _capacity_entry(limits['2'], counts['2'])
+    return {
+        'filial_1': filial_1,
+        'filial_2': filial_2,
+        'total': _capacity_entry(limits['1'] + limits['2'], counts['1'] + counts['2']),
+    }
+
+
+def build_agenda_week(
+    adapter: IXCAdapter,
+    date_start: date,
+    days: int,
+    definition_json: dict[str, Any] | None,
+    filial_id: str | None = None,
+) -> dict[str, Any]:
+    total_days = max(1, min(days, 31))
+    date_end = date_start + timedelta(days=total_days - 1)
+    items = fetch_dashboard_items(adapter, 'agenda_week', date_start, date_end, definition_json, filial_id=filial_id)
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for item in items:
+        grouped.setdefault(item.get('date') or '', []).append(item)
+
+    settings = get_settings_payload()
+    agenda_capacity = settings.get('agenda_capacity') or {}
+
+    payload_days: list[dict[str, Any]] = []
+    for idx in range(total_days):
+        current = date_start + timedelta(days=idx)
+        day_key = current.strftime('%Y-%m-%d')
+        day_items = grouped.get(day_key, [])
+        payload_days.append(
+            {
+                'date': day_key,
+                'items': day_items,
+                'capacity': _build_day_capacity(day_items, current, agenda_capacity, filial_id),
+            }
+        )
+
+    return {'days': payload_days}
 
 
 def fetch_maintenance_items(

@@ -7,6 +7,7 @@ TB_OS_DATA_AGENDA = 'su_oss_chamado.data_agenda'
 TB_OS_STATUS = 'su_oss_chamado.status'
 TB_OS_ID_ASSUNTO = 'su_oss_chamado.id_assunto'
 TB_OS_ID_CLIENTE = 'su_oss_chamado.id_cliente'
+TB_OS_ID_FILIAL = 'su_oss_chamado.id_filial'
 
 
 def _f(tb: str, op: str, p: Any) -> dict[str, str]:
