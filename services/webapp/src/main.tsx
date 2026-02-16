@@ -30,6 +30,8 @@ type SavedFilter = { id: string; name: string; scope: FilterScope; definition_js
 
 type AppSettings = {
   default_filters: { agenda: string | null; manutencoes: string | null }
+  installation_subject_ids: string[]
+  maintenance_subject_ids: string[]
   subject_groups: { instalacao: string[]; manutencao: string[]; outros: string[] }
   agenda_capacity: Record<'1' | '2', Record<'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun', number>>
   filiais: Record<'1' | '2', string>
@@ -39,6 +41,9 @@ type DashboardSummary = {
   period: { start: string; end: string }
   instalacoes: { agendadas_hoje: number; finalizadas_hoje: number; total_periodo: number }
   manutencoes: { abertas_total: number; abertas_hoje: number; finalizadas_hoje: number; total_periodo: number }
+  installations_scheduled_by_day: Array<{ date: string; count: number }>
+  maint_opened_by_day: Array<{ date: string; count: number }>
+  maint_closed_by_day: Array<{ date: string; count: number }>
 }
 
 const API = 'http://localhost:8000'

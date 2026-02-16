@@ -55,10 +55,18 @@ class SummaryManutencoes(BaseModel):
     total_periodo: int
 
 
+class SummaryByDayItem(BaseModel):
+    date: str
+    count: int
+
+
 class DashboardSummary(BaseModel):
     period: SummaryPeriod
     instalacoes: SummaryInstalacoes
     manutencoes: SummaryManutencoes
+    installations_scheduled_by_day: list[SummaryByDayItem]
+    maint_opened_by_day: list[SummaryByDayItem]
+    maint_closed_by_day: list[SummaryByDayItem]
 
 
 class CapacityEntry(BaseModel):
@@ -98,6 +106,8 @@ class SubjectGroups(BaseModel):
 
 class AppSettings(BaseModel):
     default_filters: DefaultFilters
+    installation_subject_ids: list[str] = []
+    maintenance_subject_ids: list[str] = []
     subject_groups: SubjectGroups
     agenda_capacity: dict[str, dict[str, int]]
     filiais: dict[str, str]
