@@ -2,10 +2,16 @@ from __future__ import annotations
 
 import base64
 import json
+import logging
 import time
 from typing import Any
 
 import httpx
+
+from app.config import get_settings
+from app.utils.profiling import log_profile_event, now_ms
+
+logger = logging.getLogger(__name__)
 
 
 class IXCClientError(RuntimeError):
@@ -60,8 +66,23 @@ class IXCClient:
         }
         url = f"{self.base_url}/{endpoint.lstrip('/')}"
         for attempt in range(1, self.max_retries + 1):
+            started = now_ms()
             try:
                 response = self._client.post(url, headers=self._headers(action=action), json=payload)
+                elapsed_ms = now_ms() - started
+                if get_settings().softhub_profile:
+                    log_profile_event(
+                        logger,
+                        {
+                            'component': 'ixc.post_list',
+                            'endpoint_ixc': endpoint,
+                            'status_code': response.status_code,
+                            'elapsed_ms': elapsed_ms,
+                            'content_size': len(response.content or b''),
+                            'page': page,
+                            'rp': rp,
+                        },
+                    )
                 if response.status_code in {408, 429} or response.status_code >= 500:
                     raise IXCClientError(
                         f'IXC retryable status for {endpoint} on attempt {attempt}: {response.status_code}'
@@ -70,11 +91,23 @@ class IXCClient:
                 response.raise_for_status()
 
                 # Diagnóstico quando o IXC retorna HTML/vazio/texto
-                ct = response.headers.get("content-type", "")
-                text = response.text
+                headers = getattr(response, "headers", {}) or {}
+                ct = headers.get("content-type", "")
+                text = getattr(response, "text", "")
                 try:
                     data = response.json()
                 except Exception as exc:
+                    if get_settings().softhub_profile:
+                        log_profile_event(
+                            logger,
+                            {
+                                'component': 'ixc.post_list.non_json',
+                                'endpoint_ixc': endpoint,
+                                'status_code': response.status_code,
+                                'elapsed_ms': elapsed_ms,
+                                'body_start': text[:300],
+                            },
+                        )
                     raise IXCClientError(
                         f"IXC returned non-JSON for endpoint={endpoint} "
                         f"url={url} status={response.status_code} content-type={ct} "
@@ -103,11 +136,14 @@ class IXCClient:
         sortname: str = 'id',
         sortorder: str = 'asc',
     ) -> list[dict[str, Any]]:
+        started = now_ms()
         page = 1
         all_records: list[dict[str, Any]] = []
         expected_total: int | None = None
+        pages_fetched = 0
         while True:
             data = self.post_list(endpoint, grid_filters, page, rp, sortname, sortorder)
+            pages_fetched += 1
             registros = data.get('registros') or []
             if expected_total is None:
                 try:
@@ -118,6 +154,19 @@ class IXCClient:
             if not registros or len(all_records) >= expected_total:
                 break
             page += 1
+        if get_settings().softhub_profile:
+            log_profile_event(
+                logger,
+                {
+                    'component': 'ixc.iterate_all',
+                    'endpoint_ixc': endpoint,
+                    'pages_fetched': pages_fetched,
+                    'expected_total': expected_total,
+                    'total_records_returned': len(all_records),
+                    'elapsed_ms_total': now_ms() - started,
+                    'rp': rp,
+                },
+            )
         return all_records
 
 

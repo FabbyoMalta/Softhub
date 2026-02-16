@@ -16,11 +16,15 @@ services:
 
   core_api:
     build: ./services/core_api
+    volumes:
+    - ./services/core_api/app:/app/app
     env_file:
       - .env
     environment:
       DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres:5432/softhub
       REDIS_URL: redis://redis:6379/0
+      SOFTHUB_PROFILE: ${SOFTHUB_PROFILE:-0}
+      DASHBOARD_CACHE_TTL_S: ${DASHBOARD_CACHE_TTL_S:-60}
     depends_on:
       - postgres
       - redis
@@ -34,6 +38,9 @@ services:
 
   webapp:
     build: ./services/webapp
+    volumes:
+    - ./services/webapp:/app
+    - /app/node_modules
     depends_on:
       - core_api
     ports:
