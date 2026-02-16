@@ -183,6 +183,11 @@ function MaintenancesPage() {
     setLoading(true)
     fetch(`${API}/dashboard/maintenances?${params}`).then((r) => r.json()).then(setItems).finally(() => setLoading(false))
   }
+  useEffect(() => { load({ category: 'manutencao' }, '', today, 7) }, [])
+  const save = (name: string, scope: FilterScope, definition_json: FilterDefinition) => fetch(`${API}/filters`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, scope, definition_json }) }).then((r) => r.json()).then((f: SavedFilter) => setFilters((prev) => [f, ...prev]))
+  const update = (id: string, name: string, scope: FilterScope, definition_json: FilterDefinition) => fetch(`${API}/filters/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, scope, definition_json }) }).then((r) => r.json()).then((u: SavedFilter) => setFilters((prev) => prev.map((f) => f.id === id ? u : f)))
+  return <section><header className="topbar"><h2>Manutenções</h2><div className="controls-row"><select value={selectedFilterId} onChange={(e) => { const id = e.target.value; setSelectedFilterId(id); const saved = filters.find((f) => f.id === id) || null; setEditing(saved); if (saved) load(undefined, id); else load(currentFilter) }}><option value="">Sem filtro salvo</option>{filters.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}</select><button className="btn" onClick={() => { setEditing(null); setBuilderOpen(true) }}>Novo filtro</button>{selectedFilterId && <button className="btn" onClick={() => setBuilderOpen(true)}>Salvar/Editar</button>}</div></header><PeriodControls startDate={startDate} days={days} onStartDate={(d) => { setStartDate(d); load(undefined, selectedFilterId || undefined, d, days) }} onDays={(d) => { setDays(d); load(undefined, selectedFilterId || undefined, startDate, d) }} /><MaintenancesTable items={items} loading={loading} /><FilterBuilder open={builderOpen} value={currentFilter} editingFilter={editing} onClose={() => setBuilderOpen(false)} onApply={(f) => { setCurrentFilter(f); setSelectedFilterId(''); load(f) }} onSave={save} onUpdate={update} /></section>
+}
 
   useEffect(() => { load({ category: 'manutencao' }, '', today, 7, 'open', 'queue') }, [])
   useEffect(() => { load(undefined, selectedFilterId || undefined, startDate, days, tab, mode) }, [tab, mode])
