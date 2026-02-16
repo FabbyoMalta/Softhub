@@ -4,9 +4,9 @@ import json
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from app.models.dashboard import DashboardItem, DashboardSummary
+from app.models.dashboard import AgendaWeekResponse, DashboardItem, DashboardSummary
 from app.services.adapters import get_ixc_adapter
-from app.services.dashboard import agenda_week_range, build_dashboard_summary, fetch_dashboard_items, fetch_maintenance_items, maintenances_range
+from app.services.dashboard import agenda_week_range, build_agenda_week, build_dashboard_summary, fetch_maintenance_items, maintenances_range
 from app.services.filters import get_saved_filter_definition
 
 router = APIRouter(prefix='/dashboard', tags=['dashboard'])
@@ -23,17 +23,18 @@ def _resolve_definition(filter_id: str | None, filter_json: str | None) -> dict:
     return {}
 
 
-@router.get('/agenda-week', response_model=list[DashboardItem])
+@router.get('/agenda-week', response_model=AgendaWeekResponse)
 def get_agenda_week(
     start: str | None = Query(default=None),
     days: int = Query(default=7, ge=1, le=31),
     filter_id: str | None = Query(default=None),
     filter_json: str | None = Query(default=None),
+    filial_id: str | None = Query(default=None, pattern='^(1|2)$'),
     adapter=Depends(get_ixc_adapter),
 ):
     definition = _resolve_definition(filter_id, filter_json)
-    date_start, date_end = agenda_week_range(start, days)
-    return fetch_dashboard_items(adapter, 'agenda_week', date_start, date_end, definition)
+    date_start, _ = agenda_week_range(start, days)
+    return build_agenda_week(adapter, date_start, days, definition, filial_id=filial_id)
 
 
 @router.get('/maintenances', response_model=list[DashboardItem])
