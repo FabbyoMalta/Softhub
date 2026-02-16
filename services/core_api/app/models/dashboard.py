@@ -45,6 +45,8 @@ class SummaryPeriod(BaseModel):
 class SummaryInstalacoes(BaseModel):
     agendadas_hoje: int
     finalizadas_hoje: int
+    finalizadas_periodo: int
+    pendentes_periodo: int
     total_periodo: int
 
 
@@ -52,6 +54,7 @@ class SummaryManutencoes(BaseModel):
     abertas_total: int
     abertas_hoje: int
     finalizadas_hoje: int
+    resolvidas_periodo: int
     total_periodo: int
 
 

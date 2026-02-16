@@ -7,10 +7,11 @@ type MaintData = {
   finishedToday: number
   openTotal: number
   totalPeriod: number
+  resolvedPeriod: number
 }
 
 export function SummaryPanelMaintenances({ days, data, totalOSPeriod }: { days: number; data: MaintData; totalOSPeriod: number }) {
-  const denominator = Math.max(1, data.finishedToday + data.openTotal)
+  const denominator = Math.max(1, data.totalPeriod)
 
   return (
     <section className="rounded-2xl border border-slate-200 border-t-4 border-t-amber-500 bg-white p-5 shadow-sm">
@@ -33,7 +34,7 @@ export function SummaryPanelMaintenances({ days, data, totalOSPeriod }: { days: 
         <MetricCard title="Total OS período" value={totalOSPeriod} accent="slate" helper="Instalações + Manutenções" />
       </div>
 
-      <ProgressBar label="Taxa de Resolução" value={data.finishedToday} max={denominator} />
+      <ProgressBar label="Taxa de Resolução" value={data.resolvedPeriod} max={denominator} />
     </section>
   )
 }

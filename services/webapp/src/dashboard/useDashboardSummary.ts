@@ -17,6 +17,7 @@ export type DashboardSummaryView = {
     finishedToday: number
     openTotal: number
     totalPeriod: number
+    resolvedPeriod: number
   }
   totals: { osPeriod: number }
   series?: {
@@ -57,6 +58,7 @@ const mapSummary = (raw: any): DashboardSummaryView => {
 
   const openedTotalMaint = safeNum(maintRaw?.abertas_total ?? maintRaw?.open_total)
   const totalPeriodMaint = safeNum(maintRaw?.total_periodo ?? maintRaw?.total_period)
+  const resolvedPeriodMaint = safeNum(maintRaw?.resolvidas_periodo ?? maintRaw?.resolved_period)
 
   return {
     periodStart,
@@ -73,6 +75,7 @@ const mapSummary = (raw: any): DashboardSummaryView => {
       finishedToday: safeNum(maintRaw?.finalizadas_hoje ?? maintRaw?.finished_today),
       openTotal: openedTotalMaint,
       totalPeriod: totalPeriodMaint,
+      resolvedPeriod: resolvedPeriodMaint,
     },
     totals: {
       osPeriod: safeNum(raw?.totals?.os_period) || totalPeriodInstall + totalPeriodMaint,

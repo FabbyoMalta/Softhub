@@ -32,3 +32,39 @@ export type AppSettings = {
   agenda_capacity: Record<'1' | '2', Record<'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun', number>>
   filiais: Record<'1' | '2', string>
 }
+
+export type BillingContractInfo = {
+  id: string | null
+  status: string | null
+  status_internet: string | null
+  situacao_financeira: string | null
+  pago_ate_data: string | null
+  id_vendedor: string | null
+  plano_nome: string | null
+}
+
+export type BillingOpenItem = {
+  external_id: string | null
+  id_contrato: string | null
+  id_cliente: string | null
+  due_date: string | null
+  open_days: number
+  amount_open: string | null
+  amount_total: string | null
+  payment_type: string | null
+  contract: BillingContractInfo
+}
+
+export type BillingOpenResponse = {
+  summary: {
+    total_open: number
+    over_20_days: number
+    oldest_due_date: string | null
+  }
+  items: BillingOpenItem[]
+}
+
+export type BillingAction = {
+  action_key: string
+  external_id: string
+}

@@ -4,6 +4,7 @@ import { BrowserRouter, NavLink, Navigate, Outlet, Route, Routes } from 'react-r
 import { Plus, Save } from 'lucide-react'
 import './styles.css'
 import { DashboardPage } from './dashboard/DashboardPage'
+import { BillingPage } from './billing/BillingPage'
 import { ActionBar } from './components/ActionBar'
 import { CapacityBar } from './components/CapacityBar'
 import { OsCard } from './components/OsCard'
@@ -278,11 +279,11 @@ function AdminPage() {
 }
 
 function Layout() {
-  return <main className="layout"><aside className="sidebar"><h1>Softhub</h1><nav><NavLink to="/dashboard">Dashboard</NavLink><NavLink to="/agenda">Agenda</NavLink><NavLink to="/manutencoes">Manutenções</NavLink><NavLink to="/admin">Admin</NavLink></nav></aside><section className="content"><Outlet /></section></main>
+  return <main className="layout"><aside className="sidebar"><h1>Softhub</h1><nav><NavLink to="/dashboard">Dashboard</NavLink><NavLink to="/agenda">Agenda</NavLink><NavLink to="/manutencoes">Manutenções</NavLink><NavLink to="/billing">Billing</NavLink><NavLink to="/admin">Admin</NavLink></nav></aside><section className="content"><Outlet /></section></main>
 }
 
 function AppRoutes() {
-  return <BrowserRouter><Routes><Route path="/" element={<Layout />}><Route index element={<Navigate to="/dashboard" replace />} /><Route path="dashboard" element={<DashboardPage apiBase={API} />} /><Route path="agenda" element={<AgendaPage />} /><Route path="manutencoes" element={<MaintenancesPage />} /><Route path="admin" element={<AdminPage />} /></Route></Routes></BrowserRouter>
+  return <BrowserRouter><Routes><Route path="/" element={<Layout />}><Route index element={<Navigate to="/dashboard" replace />} /><Route path="dashboard" element={<DashboardPage apiBase={API} />} /><Route path="agenda" element={<AgendaPage />} /><Route path="manutencoes" element={<MaintenancesPage />} /><Route path="billing" element={<BillingPage apiBase={API} />} /><Route path="admin" element={<AdminPage />} /></Route></Routes></BrowserRouter>
 }
 
 createRoot(document.getElementById('root')!).render(<ToastProvider><AppRoutes /></ToastProvider>)

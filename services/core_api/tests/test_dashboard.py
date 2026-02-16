@@ -112,8 +112,8 @@ def test_dashboard_summary_returns_expected_shape():
     data = response.json()
     assert data['period']['start'] == '2025-01-01'
     assert data['period']['end'] == '2025-01-07'
-    assert set(data['instalacoes'].keys()) == {'agendadas_hoje', 'finalizadas_hoje', 'total_periodo'}
-    assert set(data['manutencoes'].keys()) == {'abertas_total', 'abertas_hoje', 'finalizadas_hoje', 'total_periodo'}
+    assert set(data['instalacoes'].keys()) == {'agendadas_hoje', 'finalizadas_hoje', 'finalizadas_periodo', 'pendentes_periodo', 'total_periodo'}
+    assert set(data['manutencoes'].keys()) == {'abertas_total', 'abertas_hoje', 'finalizadas_hoje', 'resolvidas_periodo', 'total_periodo'}
     assert 'installations_scheduled_by_day' in data
     assert 'maint_opened_by_day' in data
     assert 'maint_closed_by_day' in data
@@ -149,10 +149,13 @@ def test_dashboard_summary_uses_correct_date_fields_per_type():
 
     assert summary['instalacoes']['agendadas_hoje'] == 1
     assert summary['instalacoes']['finalizadas_hoje'] == 1
+    assert summary['instalacoes']['finalizadas_periodo'] == 1
+    assert summary['instalacoes']['pendentes_periodo'] == 1
     assert summary['instalacoes']['total_periodo'] == 2
     assert summary['manutencoes']['abertas_total'] == 1
     assert summary['manutencoes']['abertas_hoje'] == 1
     assert summary['manutencoes']['finalizadas_hoje'] == 1
+    assert summary['manutencoes']['resolvidas_periodo'] == 1
     assert summary['manutencoes']['total_periodo'] == 1
 
 
@@ -184,6 +187,25 @@ def test_dashboard_summary_does_not_lookup_customers():
     ]
     summary = dashboard_service.build_dashboard_summary(_NoCustomerLookupAdapter(rows), date(2025, 1, 1), 7, {}, today='2025-01-02', tz_name='America/Sao_Paulo')
     assert summary['instalacoes']['agendadas_hoje'] == 1
+
+
+def test_dashboard_summary_installation_subjects_include_1_and_15():
+    rows = [
+        {'id': 'I-1', 'id_assunto': '1', 'status': 'AG', 'data_agenda': '2025-01-02 10:00:00', 'data_abertura': '2025-01-01 09:00:00', 'data_fechamento': None},
+        {'id': 'I-2', 'id_assunto': '15', 'status': 'AG', 'data_agenda': '2025-01-02 12:00:00', 'data_abertura': '2025-01-01 09:00:00', 'data_fechamento': None},
+    ]
+    summary = dashboard_service.build_dashboard_summary(_SummaryAdapter(rows), date(2025, 1, 1), 7, {}, today='2025-01-02', tz_name='America/Sao_Paulo')
+    assert summary['instalacoes']['agendadas_hoje'] == 2
+
+
+def test_dashboard_summary_donut_coherence_finalizadas_mais_pendentes_igual_total():
+    rows = [
+        {'id': 'I-1', 'id_assunto': '1', 'status': 'F', 'data_agenda': '2025-01-03 10:00:00', 'data_abertura': '2025-01-01 09:00:00', 'data_fechamento': '2025-01-04 12:00:00'},
+        {'id': 'I-2', 'id_assunto': '15', 'status': 'AG', 'data_agenda': '2025-01-05 10:00:00', 'data_abertura': '2025-01-01 09:00:00', 'data_fechamento': None},
+        {'id': 'I-3', 'id_assunto': '1', 'status': 'A', 'data_agenda': '2025-01-06 10:00:00', 'data_abertura': '2025-01-01 09:00:00', 'data_fechamento': None},
+    ]
+    summary = dashboard_service.build_dashboard_summary(_SummaryAdapter(rows), date(2025, 1, 1), 7, {}, today='2025-01-02', tz_name='America/Sao_Paulo')
+    assert summary['instalacoes']['finalizadas_periodo'] + summary['instalacoes']['pendentes_periodo'] == summary['instalacoes']['total_periodo']
 
 
 class _QueueMaintenanceAdapter:

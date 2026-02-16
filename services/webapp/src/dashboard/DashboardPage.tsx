@@ -61,7 +61,6 @@ export function DashboardPage({ apiBase }: { apiBase: string }) {
   }, [data?.periodEnd, data?.periodStart])
 
   const trendPlaceholder = computeTrend(0, data?.totals.osPeriod ?? 0)
-  const maintResolvedPeriod = Math.max(0, (data?.maintenances.totalPeriod ?? 0) - (data?.maintenances.openTotal ?? 0))
 
   return (
     <section className="space-y-4">
@@ -114,7 +113,6 @@ export function DashboardPage({ apiBase }: { apiBase: string }) {
           </div>
 
           <p className="text-xs text-slate-400">Tendência (placeholder): {trendPlaceholder}</p>
-          <p className="hidden">Taxa de resolução (base período): {maintResolvedPeriod}</p>
         </>
       )}
     </section>

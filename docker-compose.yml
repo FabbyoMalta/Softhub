@@ -45,3 +45,6 @@ services:
       - core_api
     ports:
       - '5173:5173'
+    volumes:
+      - ./services/webapp:/app
+      - /app/node_modules

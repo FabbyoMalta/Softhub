@@ -17,10 +17,14 @@ from app.services.dashboard import (
     compose_dashboard_summary,
     fetch_install_period_rows,
     fetch_maint_done_rows,
+    fetch_maint_done_today_rows,
+    fetch_maint_backlog_rows,
     fetch_maint_open_rows,
     fetch_maint_opened_today_rows,
     fetch_maint_period_rows,
+    fetch_install_done_today_rows,
     fetch_maintenance_items,
+    fetch_install_scheduled_today_rows,
     maintenances_range,
     _resolve_today,
 )
@@ -113,7 +117,11 @@ async def get_summary(
             tg.start_soon(run, 'maint_period_rows', lambda: fetch_maint_period_rows(adapter, date_start, date_end, maintenance_subject_ids, filial_id))
             tg.start_soon(run, 'maint_open_rows', lambda: fetch_maint_open_rows(adapter, date_start, date_end, maintenance_subject_ids, filial_id))
             tg.start_soon(run, 'maint_done_rows', lambda: fetch_maint_done_rows(adapter, date_start, date_end, maintenance_subject_ids, filial_id))
+            tg.start_soon(run, 'maint_backlog_rows', lambda: fetch_maint_backlog_rows(adapter, maintenance_subject_ids, filial_id))
             tg.start_soon(run, 'maint_opened_today_rows', lambda: fetch_maint_opened_today_rows(adapter, today_date, maintenance_subject_ids, filial_id))
+            tg.start_soon(run, 'install_scheduled_today_rows', lambda: fetch_install_scheduled_today_rows(adapter, today_date, install_subject_ids, filial_id))
+            tg.start_soon(run, 'install_done_today_rows', lambda: fetch_install_done_today_rows(adapter, today_date, install_subject_ids, filial_id))
+            tg.start_soon(run, 'maint_done_today_rows', lambda: fetch_maint_done_today_rows(adapter, today_date, maintenance_subject_ids, filial_id))
 
         payload = compose_dashboard_summary(
             date_start,
@@ -124,7 +132,11 @@ async def get_summary(
             results.get('maint_period_rows', []),
             results.get('maint_open_rows', []),
             results.get('maint_done_rows', []),
+            results.get('maint_backlog_rows', []),
             results.get('maint_opened_today_rows', []),
+            results.get('install_scheduled_today_rows', []),
+            results.get('install_done_today_rows', []),
+            results.get('maint_done_today_rows', []),
         )
 
     cache_set_json(cache_key, payload, ttl_s=get_settings().dashboard_cache_ttl_s)
