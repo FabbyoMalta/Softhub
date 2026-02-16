@@ -16,6 +16,7 @@ class DashboardItem(BaseModel):
     assunto_id: str | None = None
     type: Literal['instalacao', 'manutencao', 'outros']
     id_cliente: str | None = None
+    id_filial: str | None = None
     customer_name: str | None = None
     phone: str | None = None
     address: str | None = None
@@ -60,6 +61,30 @@ class DashboardSummary(BaseModel):
     manutencoes: SummaryManutencoes
 
 
+class CapacityEntry(BaseModel):
+    limit: int
+    count: int
+    remaining: int
+    fill_ratio: float
+    level: Literal['green', 'yellow', 'red']
+
+
+class DayCapacity(BaseModel):
+    filial_1: CapacityEntry
+    filial_2: CapacityEntry
+    total: CapacityEntry
+
+
+class AgendaDay(BaseModel):
+    date: str
+    items: list[DashboardItem]
+    capacity: DayCapacity
+
+
+class AgendaWeekResponse(BaseModel):
+    days: list[AgendaDay]
+
+
 class DefaultFilters(BaseModel):
     agenda: str | None = None
     manutencoes: str | None = None
@@ -74,3 +99,5 @@ class SubjectGroups(BaseModel):
 class AppSettings(BaseModel):
     default_filters: DefaultFilters
     subject_groups: SubjectGroups
+    agenda_capacity: dict[str, dict[str, int]]
+    filiais: dict[str, str]
