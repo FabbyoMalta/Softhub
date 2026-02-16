@@ -34,3 +34,43 @@ class SavedFilterIn(BaseModel):
 class SavedFilterOut(SavedFilterIn):
     id: str
     created_at: datetime
+
+
+class SummaryPeriod(BaseModel):
+    start: str
+    end: str
+
+
+class SummaryInstalacoes(BaseModel):
+    agendadas_hoje: int
+    finalizadas_hoje: int
+    total_periodo: int
+
+
+class SummaryManutencoes(BaseModel):
+    abertas_total: int
+    abertas_hoje: int
+    finalizadas_hoje: int
+    total_periodo: int
+
+
+class DashboardSummary(BaseModel):
+    period: SummaryPeriod
+    instalacoes: SummaryInstalacoes
+    manutencoes: SummaryManutencoes
+
+
+class DefaultFilters(BaseModel):
+    agenda: str | None = None
+    manutencoes: str | None = None
+
+
+class SubjectGroups(BaseModel):
+    instalacao: list[str] = []
+    manutencao: list[str] = []
+    outros: list[str] = []
+
+
+class AppSettings(BaseModel):
+    default_filters: DefaultFilters
+    subject_groups: SubjectGroups

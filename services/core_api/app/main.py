@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.billing import router as billing_router
 from app.api.dashboard import router as dashboard_router
 from app.api.filters import router as filters_router
+from app.api.settings import router as settings_router
 from app.config import get_settings
 from app.db import init_db
 from app.services.adapters import close_ixc_resources
@@ -23,6 +24,7 @@ app.add_middleware(
 app.include_router(billing_router)
 app.include_router(dashboard_router)
 app.include_router(filters_router)
+app.include_router(settings_router)
 
 
 @app.on_event('startup')

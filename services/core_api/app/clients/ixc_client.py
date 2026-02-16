@@ -70,8 +70,9 @@ class IXCClient:
                 response.raise_for_status()
 
                 # Diagnóstico quando o IXC retorna HTML/vazio/texto
-                ct = response.headers.get("content-type", "")
-                text = response.text
+                headers = getattr(response, "headers", {}) or {}
+                ct = headers.get("content-type", "")
+                text = getattr(response, "text", "")
                 try:
                     data = response.json()
                 except Exception as exc:
