@@ -443,6 +443,41 @@ def _is_within_day_bounds(raw: str | None, day_start: datetime, day_end: datetim
     return day_start <= dt <= day_end
 
 
+def _fetch_rows_for_exact_day(
+    adapter: IXCAdapter,
+    date_field: str,
+    day: date,
+    assunto_ids: list[str],
+    filial_id: str | None = None,
+) -> list[dict[str, Any]]:
+    start = f"{day.strftime('%Y-%m-%d')} 00:00:00"
+    next_day = day + timedelta(days=1)
+    end = f"{next_day.strftime('%Y-%m-%d')} 00:00:00"
+
+    assunto_list = assunto_ids or [None]
+    grids: list[list[dict[str, str]]] = []
+    for assunto in assunto_list:
+        grid = [
+            {'TB': date_field, 'OP': '>=', 'P': start},
+            {'TB': date_field, 'OP': '<', 'P': end},
+        ]
+        if assunto:
+            grid.append({'TB': TB_OS_ID_ASSUNTO, 'OP': '=', 'P': assunto})
+        if filial_id:
+            grid.append({'TB': TB_OS_ID_FILIAL, 'OP': '=', 'P': filial_id})
+        grids.append(grid)
+
+    seen: set[str] = set()
+    rows: list[dict[str, Any]] = []
+    for grid in grids:
+        for row in adapter.list_service_orders(grid):
+            key = str(row.get('id') or '')
+            if key and key not in seen:
+                seen.add(key)
+                rows.append(row)
+    return rows
+
+
 def _count_by_day(rows: list[dict[str, Any]], field: str, date_start: date, total_days: int) -> list[dict[str, Any]]:
     counts = { (date_start + timedelta(days=idx)).strftime('%Y-%m-%d'): 0 for idx in range(total_days) }
     for row in rows:
@@ -515,6 +550,13 @@ def build_dashboard_summary(
         date_field='su_oss_chamado.data_fechamento',
         filial_id=filial_id,
     )
+    maint_opened_today_rows = _fetch_rows_for_exact_day(
+        adapter,
+        date_field='su_oss_chamado.data_abertura',
+        day=today_date,
+        assunto_ids=sorted(maintenance_subject_ids),
+        filial_id=filial_id,
+    )
 
     install_rows = _status_filtered(install_rows, definition_json)
     maint_period_rows = _status_filtered(maint_period_rows, definition_json)
@@ -539,9 +581,7 @@ def build_dashboard_summary(
         'manutencoes': {
             'abertas_total': len(maint_open_rows),
             'abertas_hoje': sum(
-                1
-                for row in maint_open_rows
-                if str(row.get('status') or '') in STATUS_GROUPS['open_like'] and _is_within_day_bounds(row.get('data_abertura'), day_start, day_end)
+                1 for row in maint_opened_today_rows if _is_within_day_bounds(row.get('data_abertura'), day_start, day_end)
             ),
             'finalizadas_hoje': sum(
                 1

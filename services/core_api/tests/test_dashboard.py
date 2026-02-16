@@ -34,6 +34,8 @@ class _SummaryAdapter:
                 return value >= p
             if op == '<=':
                 return value <= p
+            if op == '<':
+                return value < p
             return True
 
         out = self.rows
@@ -153,7 +155,7 @@ def test_dashboard_summary_uses_correct_date_fields_per_type():
     assert summary['manutencoes']['total_periodo'] == 1
 
 
-def test_dashboard_summary_opened_today_uses_data_abertura_not_data_agenda():
+def test_dashboard_summary_opened_today_uses_data_abertura_and_ignores_status():
     rows = [
         {'id': 'M-1', 'id_assunto': '17', 'status': 'A', 'data_agenda': '2025-01-02 09:00:00', 'data_abertura': '2025-01-01 08:00:00', 'data_fechamento': None},
         {'id': 'M-2', 'id_assunto': '17', 'status': 'A', 'data_agenda': '2025-01-01 09:00:00', 'data_abertura': '2025-01-02 08:00:00', 'data_fechamento': None},
@@ -161,7 +163,7 @@ def test_dashboard_summary_opened_today_uses_data_abertura_not_data_agenda():
     ]
 
     summary = dashboard_service.build_dashboard_summary(_SummaryAdapter(rows), date(2025, 1, 1), 7, {}, today='2025-01-02', tz_name='America/Sao_Paulo')
-    assert summary['manutencoes']['abertas_hoje'] == 1
+    assert summary['manutencoes']['abertas_hoje'] == 2
 
 
 def test_dashboard_summary_fallbacks_to_server_local_date_when_tz_missing():
