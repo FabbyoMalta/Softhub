@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta
+import logging
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -33,6 +34,8 @@ INSTALL_ASSUNTOS = {'1'}
 MAINTENANCE_ASSUNTOS = {'17', '34', '31'}
 DEFAULT_SUMMARY_TZ = 'America/Sao_Paulo'
 WEEKDAY_KEYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
+CAPACITY_STATUS_CODES = ['AG', 'RAG', 'AS', 'DS', 'EX', 'F', 'A', 'AN', 'EN']
+logger = logging.getLogger(__name__)
 
 
 def parse_date_or_default(raw: str | None, default: date) -> date:
@@ -255,31 +258,35 @@ def _capacity_entry(limit: int, count: int) -> dict[str, Any]:
     }
 
 
-def _build_day_capacity(items: list[dict[str, Any]], day: date, agenda_capacity: dict[str, dict[str, int]], filial_id: str | None) -> dict[str, Any]:
-    weekday = WEEKDAY_KEYS[day.weekday()]
-    counts = {'1': 0, '2': 0}
-    for item in items:
-        if item.get('type') != 'instalacao':
-            continue
-        item_filial = str(item.get('id_filial') or '')
-        if item_filial in counts:
-            counts[item_filial] += 1
-
+def _build_day_capacity(counts: dict[str, int], day: date, agenda_capacity: dict[str, dict[str, int]], filial_id: str | None) -> dict[str, Any]:
+    weekday_index = day.weekday()
+    weekday = WEEKDAY_KEYS[weekday_index]
     limits = {
         '1': int((agenda_capacity.get('1') or {}).get(weekday, 0) or 0),
         '2': int((agenda_capacity.get('2') or {}).get(weekday, 0) or 0),
     }
 
+    logger.info(
+        'agenda_capacity day=%s weekday=%s selected_key=%s limit_f1=%s limit_f2=%s count_f1=%s count_f2=%s',
+        day.strftime('%Y-%m-%d'),
+        weekday_index,
+        weekday,
+        limits['1'],
+        limits['2'],
+        counts.get('1', 0),
+        counts.get('2', 0),
+    )
+
     if filial_id in ('1', '2'):
-        entry = _capacity_entry(limits[filial_id], counts[filial_id])
+        entry = _capacity_entry(limits[filial_id], counts.get(filial_id, 0))
         return {'filial_1': entry if filial_id == '1' else _capacity_entry(0, 0), 'filial_2': entry if filial_id == '2' else _capacity_entry(0, 0), 'total': entry}
 
-    filial_1 = _capacity_entry(limits['1'], counts['1'])
-    filial_2 = _capacity_entry(limits['2'], counts['2'])
+    filial_1 = _capacity_entry(limits['1'], counts.get('1', 0))
+    filial_2 = _capacity_entry(limits['2'], counts.get('2', 0))
     return {
         'filial_1': filial_1,
         'filial_2': filial_2,
-        'total': _capacity_entry(limits['1'] + limits['2'], counts['1'] + counts['2']),
+        'total': _capacity_entry(limits['1'] + limits['2'], counts.get('1', 0) + counts.get('2', 0)),
     }
 
 
@@ -297,6 +304,27 @@ def build_agenda_week(
     for item in items:
         grouped.setdefault(item.get('date') or '', []).append(item)
 
+    capacity_rows = _fetch_order_rows(
+        adapter,
+        date_start,
+        date_end,
+        CAPACITY_STATUS_CODES,
+        sorted(INSTALL_ASSUNTOS),
+        date_field='su_oss_chamado.data_agenda',
+        filial_id=filial_id,
+    )
+    counts_by_day: dict[str, dict[str, int]] = {}
+    for row in capacity_rows:
+        dt = _parse_dt(row.get('data_agenda'))
+        if not dt:
+            continue
+        day_key = dt.strftime('%Y-%m-%d')
+        row_filial = str(row.get('id_filial') or '')
+        if row_filial not in ('1', '2'):
+            continue
+        counts_by_day.setdefault(day_key, {'1': 0, '2': 0})
+        counts_by_day[day_key][row_filial] += 1
+
     settings = get_settings_payload()
     agenda_capacity = settings.get('agenda_capacity') or {}
 
@@ -309,7 +337,7 @@ def build_agenda_week(
             {
                 'date': day_key,
                 'items': day_items,
-                'capacity': _build_day_capacity(day_items, current, agenda_capacity, filial_id),
+                'capacity': _build_day_capacity(counts_by_day.get(day_key, {'1': 0, '2': 0}), current, agenda_capacity, filial_id),
             }
         )
 

@@ -232,3 +232,29 @@ def test_agenda_capacity_filters_single_filial():
     assert len(day['items']) == 1
     assert day['items'][0]['id_filial'] == '2'
     assert day['capacity']['total']['count'] == 1
+
+
+def test_agenda_capacity_includes_finalized_status_f_for_slot_count():
+    rows = [
+        {'id': 'I-1', 'id_cliente': '1', 'id_assunto': '1', 'status': 'F', 'data_agenda': '2026-02-17 09:00:00', 'id_filial': '1'},
+        {'id': 'I-2', 'id_cliente': '2', 'id_assunto': '1', 'status': 'AG', 'data_agenda': '2026-02-17 10:00:00', 'id_filial': '1'},
+    ]
+    agenda = dashboard_service.build_agenda_week(_SummaryAdapter(rows), date(2026, 2, 17), 1, {}, filial_id='1')
+    day = agenda['days'][0]
+    assert day['capacity']['total']['count'] == 2
+
+
+def test_agenda_capacity_uses_tue_limit_mapping():
+    rows = [
+        {'id': 'I-1', 'id_cliente': '1', 'id_assunto': '1', 'status': 'AG', 'data_agenda': '2026-02-17 09:00:00', 'id_filial': '1'},
+        {'id': 'I-2', 'id_cliente': '2', 'id_assunto': '1', 'status': 'AG', 'data_agenda': '2026-02-17 10:00:00', 'id_filial': '1'},
+        {'id': 'I-3', 'id_cliente': '3', 'id_assunto': '1', 'status': 'AG', 'data_agenda': '2026-02-17 11:00:00', 'id_filial': '1'},
+        {'id': 'I-4', 'id_cliente': '4', 'id_assunto': '1', 'status': 'AG', 'data_agenda': '2026-02-17 12:00:00', 'id_filial': '1'},
+        {'id': 'I-5', 'id_cliente': '5', 'id_assunto': '1', 'status': 'AG', 'data_agenda': '2026-02-17 13:00:00', 'id_filial': '1'},
+        {'id': 'I-6', 'id_cliente': '6', 'id_assunto': '1', 'status': 'AG', 'data_agenda': '2026-02-17 14:00:00', 'id_filial': '1'},
+    ]
+    agenda = dashboard_service.build_agenda_week(_SummaryAdapter(rows), date(2026, 2, 17), 1, {}, filial_id='1')
+    day = agenda['days'][0]
+    assert day['capacity']['total']['limit'] == 5
+    assert day['capacity']['total']['count'] == 6
+    assert day['capacity']['total']['level'] == 'red'
