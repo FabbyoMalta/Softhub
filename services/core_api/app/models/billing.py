@@ -34,3 +34,8 @@ class BillingSummaryOut(BaseModel):
 class BillingOpenResponse(BaseModel):
     summary: BillingSummaryOut
     items: list[BillingOpenItem]
+
+
+class BillingActionOut(BaseModel):
+    action_key: str
+    external_id: str

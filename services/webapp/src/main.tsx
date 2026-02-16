@@ -1,49 +1,19 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { BrowserRouter, NavLink, Navigate, Outlet, Route, Routes } from 'react-router-dom'
+import { Plus, Save } from 'lucide-react'
 import './styles.css'
-
-type DashboardItem = {
-  id: string
-  scheduled_at: string | null
-  date: string
-  time: string | null
-  status_code: string
-  status_label: string
-  assunto_id: string
-  type: 'instalacao' | 'manutencao' | 'outros'
-  id_filial?: string
-  customer_name: string
-  bairro: string
-  cidade: string
-  protocolo: string
-}
-
-type CapacityEntry = { limit: number; count: number; remaining: number; fill_ratio: number; level: 'green' | 'yellow' | 'red' }
-type DayCapacity = { filial_1: CapacityEntry; filial_2: CapacityEntry; total: CapacityEntry }
-type AgendaDay = { date: string; items: DashboardItem[]; capacity: DayCapacity }
-type AgendaWeekResponse = { days: AgendaDay[] }
-
-type FilterDefinition = { assunto_ids?: string[]; status_codes?: string[]; category?: 'instalacao' | 'manutencao' | 'outros' }
-type FilterScope = 'agenda_week' | 'maintenances'
-type SavedFilter = { id: string; name: string; scope: FilterScope; definition_json: FilterDefinition; created_at: string }
-
-type AppSettings = {
-  default_filters: { agenda: string | null; manutencoes: string | null }
-  subject_groups: { instalacao: string[]; manutencao: string[]; outros: string[] }
-  agenda_capacity: Record<'1' | '2', Record<'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun', number>>
-  filiais: Record<'1' | '2', string>
-}
-
-type DashboardSummary = {
-  period: { start: string; end: string }
-  instalacoes: { agendadas_hoje: number; finalizadas_hoje: number; total_periodo: number }
-  manutencoes: { abertas_total: number; abertas_hoje: number; finalizadas_hoje: number; total_periodo: number }
-}
+import { DashboardPage } from './dashboard/DashboardPage'
+import { BillingPage } from './billing/BillingPage'
+import { ActionBar } from './components/ActionBar'
+import { CapacityBar } from './components/CapacityBar'
+import { OsCard } from './components/OsCard'
+import { OsDrawer } from './components/OsDrawer'
+import { PillToggle } from './components/PillToggle'
+import { ToastProvider, useToast } from './components/Toast'
+import type { AgendaDay, AgendaWeekResponse, AppSettings, DashboardItem, FilterDefinition, FilterScope, SavedFilter } from './types'
 
 const API = 'http://localhost:8000'
-const DONE = ['F']
-const SCHEDULED = ['AG', 'RAG']
 const STATUS_OPTIONS = ['A', 'AN', 'EN', 'AS', 'AG', 'DS', 'EX', 'F', 'RAG']
 const WEEKDAYS: Array<'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun'> = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
 const dayLabelFormatter = new Intl.DateTimeFormat('pt-BR', { weekday: 'short' })
@@ -59,9 +29,8 @@ const addDays = (base: string, days: number) => {
   date.setDate(date.getDate() + days)
   return toISODate(date)
 }
-const buildPeriodLabel = (startDate: string, days: number) => `${dateFormatter.format(parseISODate(startDate))} até ${dateFormatter.format(parseISODate(addDays(startDate, days - 1)))}`
-const statusBadgeClass = (statusCode: string) => DONE.includes(statusCode) ? 'badge success' : SCHEDULED.includes(statusCode) ? 'badge warning' : ['EN', 'AS'].includes(statusCode) ? 'badge info' : 'badge danger'
-const dayLevelClass = (level: 'green' | 'yellow' | 'red') => level === 'red' ? 'day-level-red' : level === 'yellow' ? 'day-level-yellow' : 'day-level-green'
+
+const inputBaseClass = "rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
 
 function FilterBuilder({ open, value, editingFilter, onClose, onApply, onSave, onUpdate }: { open: boolean; value: FilterDefinition; editingFilter: SavedFilter | null; onClose: () => void; onApply: (filter: FilterDefinition) => void; onSave: (name: string, scope: FilterScope, filter: FilterDefinition) => void; onUpdate: (id: string, name: string, scope: FilterScope, filter: FilterDefinition) => void }) {
   const [draft, setDraft] = useState<FilterDefinition>(value)
@@ -89,38 +58,6 @@ function FilterBuilder({ open, value, editingFilter, onClose, onApply, onSave, o
   </div></div>
 }
 
-function PeriodControls({ startDate, days, onStartDate, onDays }: { startDate: string; days: number; onStartDate: (d: string) => void; onDays: (d: number) => void }) {
-  return <div className="controls-row block"><label>Início<input type="date" value={startDate} onChange={(e) => onStartDate(e.target.value)} /></label><label>Dias<select value={days} onChange={(e) => onDays(Number(e.target.value))}><option value={7}>7</option><option value={10}>10</option><option value={14}>14</option></select></label></div>
-}
-
-function AgendaBoard({ days, startDate, totalDays, loading, selectedFilialId, filialNames }: { days: AgendaDay[]; startDate: string; totalDays: number; loading: boolean; selectedFilialId: '' | '1' | '2'; filialNames: Record<'1' | '2', string> }) {
-  const dates = useMemo(() => Array.from({ length: totalDays }, (_, idx) => addDays(startDate, idx)), [startDate, totalDays])
-  const byDate = useMemo(() => days.reduce((acc, d) => ({ ...acc, [d.date]: d }), {} as Record<string, AgendaDay>), [days])
-
-  const capacityLabel = (day: AgendaDay) => {
-    if (selectedFilialId) {
-      const entry = selectedFilialId === '1' ? day.capacity.filial_1 : day.capacity.filial_2
-      return `${entry.count}/${entry.limit} (${Math.max(0, entry.remaining)} vagas)`
-    }
-    return `F1: ${day.capacity.filial_1.count}/${day.capacity.filial_1.limit} (${Math.max(0, day.capacity.filial_1.remaining)} vagas) | F2: ${day.capacity.filial_2.count}/${day.capacity.filial_2.limit} (${Math.max(0, day.capacity.filial_2.remaining)} vagas)`
-  }
-
-  return <section className="panel"><header className="panel-header"><h2>Agenda técnica</h2><p>{buildPeriodLabel(startDate, totalDays)}</p></header>{loading ? <div className="agenda-grid">{dates.map((d) => <div key={d} className="skeleton day-skeleton" />)}</div> : <div className="agenda-grid">{dates.map((dayDate) => {
-    const day = byDate[dayDate] ?? { date: dayDate, items: [], capacity: { filial_1: { limit: 0, count: 0, remaining: 0, fill_ratio: 0, level: 'green' }, filial_2: { limit: 0, count: 0, remaining: 0, fill_ratio: 0, level: 'green' }, total: { limit: 0, count: 0, remaining: 0, fill_ratio: 0, level: 'green' } } }
-    const level = selectedFilialId ? (selectedFilialId === '1' ? day.capacity.filial_1.level : day.capacity.filial_2.level) : day.capacity.total.level
-    return <article key={dayDate} className={`day-card ${dayLevelClass(level)}`}><h4>{dayLabelFormatter.format(parseISODate(dayDate))} {dateFormatter.format(parseISODate(dayDate))}</h4><small>{capacityLabel(day)}</small><div className="day-list">{day.items.map((item) => <div key={item.id} className="ticket-card"><div className="ticket-head"><strong>{item.time || '--:--'}</strong><span className={statusBadgeClass(item.status_code)}>{item.status_label || item.status_code}</span></div><div>{item.customer_name || 'Cliente não informado'}</div><small>{item.bairro || '-'} · {item.cidade || '-'}</small><div><span className="badge muted">{filialNames[(item.id_filial as '1' | '2')] || `Filial ${item.id_filial || '-'}`}</span></div></div>)}</div></article>
-  })}</div>}</section>
-}
-
-function MaintenancesTable({ items, loading, tab, onTab }: { items: DashboardItem[]; loading: boolean; tab: 'open' | 'scheduled' | 'done'; onTab: (t: 'open' | 'scheduled' | 'done') => void }) {
-  const [selected, setSelected] = useState<DashboardItem | null>(null)
-  return <section className="panel"><header className="panel-header"><h2>Manutenções</h2></header>
-    <div className="tab-row"><button className={`btn ${tab === 'open' ? 'primary' : ''}`} onClick={() => onTab('open')}>Abertas/Andamento</button><button className={`btn ${tab === 'scheduled' ? 'primary' : ''}`} onClick={() => onTab('scheduled')}>Agendadas</button><button className={`btn ${tab === 'done' ? 'primary' : ''}`} onClick={() => onTab('done')}>Finalizadas</button></div>
-    {loading ? <div className="skeleton table-skeleton" /> : <div className="table-wrap"><table><thead><tr><th>Data</th><th>Status</th><th>Cliente</th><th>Bairro/Cidade</th></tr></thead><tbody>{items.map((i) => <tr key={i.id} onClick={() => setSelected(i)}><td>{i.date} {i.time || ''}</td><td><span className={statusBadgeClass(i.status_code)}>{i.status_label}</span></td><td>{i.customer_name}</td><td>{i.bairro} / {i.cidade}</td></tr>)}</tbody></table></div>}
-    {selected && <div className="modal-backdrop" onClick={() => setSelected(null)}><div className="modal-panel" onClick={(e) => e.stopPropagation()}><h3>OS {selected.id}</h3><p>Cliente: {selected.customer_name}</p><p>Protocolo: {selected.protocolo || '-'}</p><p>Local: {selected.bairro} / {selected.cidade}</p><button className="btn ghost" onClick={() => setSelected(null)}>Fechar</button></div></div>}
-  </section>
-}
-
 function useSavedFilters(scope: FilterScope) {
   const [filters, setFilters] = useState<SavedFilter[]>([])
   const reload = () => fetch(`${API}/filters?scope=${scope}`).then((r) => r.json()).then(setFilters)
@@ -128,16 +65,58 @@ function useSavedFilters(scope: FilterScope) {
   return { filters, setFilters, reload }
 }
 
-function DashboardPage() {
+function AgendaBoard({ days, startDate, totalDays, loading, selectedFilialId, filialNames }: { days: AgendaDay[]; startDate: string; totalDays: number; loading: boolean; selectedFilialId: '' | '1' | '2'; filialNames: Record<'1' | '2', string> }) {
+  const [selected, setSelected] = useState<DashboardItem | null>(null)
+  const dates = useMemo(() => Array.from({ length: totalDays }, (_, idx) => addDays(startDate, idx)), [startDate, totalDays])
+  const byDate = useMemo(() => Object.fromEntries(days.map((d) => [d.date, d])), [days])
   const today = toISODate(new Date())
-  const [startDate, setStartDate] = useState(today)
-  const [days, setDays] = useState(7)
-  const [summary, setSummary] = useState<DashboardSummary | null>(null)
-  useEffect(() => { fetch(`${API}/dashboard/summary?${new URLSearchParams({ start: startDate, days: String(days) })}`).then((r) => r.json()).then(setSummary) }, [startDate, days])
-  return <section><header className="topbar"><h2>Dashboard</h2><p>Apenas indicadores sumarizados</p></header><PeriodControls startDate={startDate} days={days} onStartDate={setStartDate} onDays={setDays} /><div className="kpi-grid">{summary && [['Inst. agendadas hoje', summary.instalacoes.agendadas_hoje], ['Inst. finalizadas hoje', summary.instalacoes.finalizadas_hoje], ['Inst. total período', summary.instalacoes.total_periodo], ['Manut. abertas total', summary.manutencoes.abertas_total], ['Manut. abertas hoje', summary.manutencoes.abertas_hoje], ['Manut. finalizadas hoje', summary.manutencoes.finalizadas_hoje], ['Total OS período', summary.instalacoes.total_periodo + summary.manutencoes.total_periodo]].map(([label, value]) => <article key={label as string} className="card"><h4>{label}</h4><p>{value as number}</p><span className="badge muted">{summary.period.start} → {summary.period.end}</span></article>)}</div></section>
+
+  return (
+    <section className="panel">
+      <header className="panel-header"><h2>Agenda técnica</h2><p>{dateFormatter.format(parseISODate(startDate))} até {dateFormatter.format(parseISODate(addDays(startDate, totalDays - 1)))}</p></header>
+      {loading ? <div className="agenda-grid">{dates.map((d) => <div key={d} className="skeleton" />)}</div> : (
+        <div className="overflow-x-auto pb-2">
+          <div className="flex min-w-max gap-6 snap-x snap-mandatory">
+            {dates.map((dayDate) => {
+              const day = byDate[dayDate] ?? { date: dayDate, items: [], capacity: { filial_1: { limit: 0, count: 0, remaining: 0, fill_ratio: 0, level: 'green' }, filial_2: { limit: 0, count: 0, remaining: 0, fill_ratio: 0, level: 'green' }, total: { limit: 0, count: 0, remaining: 0, fill_ratio: 0, level: 'green' } } }
+              const d = parseISODate(dayDate)
+              const isWeekend = [0, 6].includes(d.getDay())
+              const isToday = dayDate === today
+              const rowClass = isWeekend ? 'bg-amber-50/60' : 'bg-slate-50/80'
+              const todayClass = isToday ? 'ring-2 ring-blue-200 border-blue-300' : 'border-slate-200'
+              const capacityText = selectedFilialId
+                ? `${selectedFilialId === '1' ? filialNames['1'] : filialNames['2']}: ${(selectedFilialId === '1' ? day.capacity.filial_1.count : day.capacity.filial_2.count)}/${(selectedFilialId === '1' ? day.capacity.filial_1.limit : day.capacity.filial_2.limit)}`
+                : `F1 ${day.capacity.filial_1.count}/${day.capacity.filial_1.limit} • F2 ${day.capacity.filial_2.count}/${day.capacity.filial_2.limit}`
+
+              return (
+                <article key={dayDate} className={`snap-start shrink-0 w-[320px] rounded-2xl border p-3 ${rowClass} ${todayClass}`}>
+                  <div className="mb-2 flex items-center justify-between">
+                    <h4 className="text-sm font-semibold capitalize">{dayLabelFormatter.format(d)} {dateFormatter.format(d)}</h4>
+                    {isToday ? <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs text-blue-700">Hoje</span> : null}
+                  </div>
+                  <CapacityBar capacity={day.capacity} />
+                  <p className="mt-1 text-xs text-slate-600" title={`F1: ${day.capacity.filial_1.count}/${day.capacity.filial_1.limit} (${Math.max(0, day.capacity.filial_1.remaining)} vagas) | F2: ${day.capacity.filial_2.count}/${day.capacity.filial_2.limit} (${Math.max(0, day.capacity.filial_2.remaining)} vagas)`}>{capacityText}</p>
+                  <div className="mt-3 space-y-2">
+                    {day.items.map((item) => <OsCard key={item.id} item={item} onClick={() => setSelected(item)} />)}
+                    {!day.items.length ? <p className="rounded-lg border border-dashed border-slate-300 bg-white/70 p-3 text-xs text-slate-500">Sem OS no dia</p> : null}
+                  </div>
+                </article>
+              )
+            })}
+          </div>
+        </div>
+      )}
+      <OsDrawer item={selected} open={!!selected} onClose={() => setSelected(null)} />
+    </section>
+  )
+}
+
+function MaintenancesTable({ items, loading, tab, onTab }: { items: DashboardItem[]; loading: boolean; tab: 'open' | 'scheduled' | 'done'; onTab: (t: 'open' | 'scheduled' | 'done') => void }) {
+  return <section className="panel"><div className="tab-row"><button className={`btn ${tab === 'open' ? 'primary' : ''}`} onClick={() => onTab('open')}>Abertas</button><button className={`btn ${tab === 'scheduled' ? 'primary' : ''}`} onClick={() => onTab('scheduled')}>Agendadas</button><button className={`btn ${tab === 'done' ? 'primary' : ''}`} onClick={() => onTab('done')}>Finalizadas</button></div>{loading ? <div className="skeleton table-skeleton" /> : <div className="table-wrap"><table><thead><tr><th>Data/Hora</th><th>Cliente</th><th>Bairro/Cidade</th><th>Status</th><th>Protocolo</th></tr></thead><tbody>{items.map((item) => <tr key={item.id}><td>{item.date} {item.time || '--:--'}</td><td>{item.customer_name || '-'}</td><td>{item.bairro || '-'} / {item.cidade || '-'}</td><td>{item.status_label || item.status_code}</td><td>{item.protocolo || '-'}</td></tr>)}</tbody></table></div>}</section>
 }
 
 function AgendaPage() {
+  const toast = useToast()
   const today = toISODate(new Date())
   const { filters, setFilters } = useSavedFilters('agenda_week')
   const [selectedFilterId, setSelectedFilterId] = useState('')
@@ -146,29 +125,60 @@ function AgendaPage() {
   const [builderOpen, setBuilderOpen] = useState(false)
   const [editing, setEditing] = useState<SavedFilter | null>(null)
   const [agendaDays, setAgendaDays] = useState<AgendaDay[]>([])
-  const [filialNames, setFilialNames] = useState<Record<'1' | '2', string>>({ '1': 'Filial 1', '2': 'Filial 2' })
+  const [filialNames, setFilialNames] = useState<Record<'1' | '2', string>>({ '1': 'Grande Vitória', '2': 'João Neiva' })
   const [startDate, setStartDate] = useState(today)
   const [days, setDays] = useState(7)
   const [loading, setLoading] = useState(false)
 
-  const load = (filter?: FilterDefinition, filterId?: string, s = startDate, d = days, filial = selectedFilialId) => {
+  const load = async (filter?: FilterDefinition, filterId?: string, s = startDate, d = days, filial = selectedFilialId) => {
     const base: Record<string, string> = { start: s, days: String(d) }
     if (filial) base.filial_id = filial
     const params = filterId ? new URLSearchParams({ ...base, filter_id: filterId }) : new URLSearchParams({ ...base, filter_json: JSON.stringify(filter || currentFilter) })
     setLoading(true)
-    fetch(`${API}/dashboard/agenda-week?${params}`).then((r) => r.json()).then((payload: AgendaWeekResponse) => setAgendaDays(payload.days || [])).finally(() => setLoading(false))
+    try {
+      const payload = await fetch(`${API}/dashboard/agenda-week?${params}`).then((r) => r.json()) as AgendaWeekResponse
+      setAgendaDays(payload.days || [])
+    } finally {
+      setLoading(false)
+    }
   }
 
   useEffect(() => { load({}, '', today, 7, '') }, [])
   useEffect(() => { fetch(`${API}/settings`).then((r) => r.json()).then((s: AppSettings) => setFilialNames(s.filiais || { '1': 'Filial 1', '2': 'Filial 2' })) }, [])
 
-  const save = (name: string, scope: FilterScope, definition_json: FilterDefinition) => fetch(`${API}/filters`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, scope, definition_json }) }).then((r) => r.json()).then((f: SavedFilter) => setFilters((prev) => [f, ...prev]))
-  const update = (id: string, name: string, scope: FilterScope, definition_json: FilterDefinition) => fetch(`${API}/filters/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, scope, definition_json }) }).then((r) => r.json()).then((u: SavedFilter) => setFilters((prev) => prev.map((f) => f.id === id ? u : f)))
+  const save = async (name: string, scope: FilterScope, definition_json: FilterDefinition) => {
+    try {
+      const f = await fetch(`${API}/filters`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, scope, definition_json }) }).then((r) => r.json()) as SavedFilter
+      setFilters((prev) => [f, ...prev])
+      toast.success('Filtro salvo com sucesso')
+    } catch {
+      toast.error('Falha ao salvar filtro')
+    }
+  }
+  const update = async (id: string, name: string, scope: FilterScope, definition_json: FilterDefinition) => {
+    try {
+      const u = await fetch(`${API}/filters/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, scope, definition_json }) }).then((r) => r.json()) as SavedFilter
+      setFilters((prev) => prev.map((f) => f.id === id ? u : f))
+      toast.success('Filtro atualizado com sucesso')
+    } catch {
+      toast.error('Falha ao atualizar filtro')
+    }
+  }
 
-  return <section><header className="topbar"><h2>Agenda</h2><div className="controls-row"><select value={selectedFilterId} onChange={(e) => { const id = e.target.value; setSelectedFilterId(id); const saved = filters.find((f) => f.id === id) || null; setEditing(saved); if (saved) { setCurrentFilter(saved.definition_json); load(undefined, id) } else load(currentFilter) }}><option value="">Sem filtro salvo</option>{filters.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}</select><div className="segmented"><button className={`btn ${selectedFilialId === '' ? 'primary' : ''}`} onClick={() => { setSelectedFilialId(''); load(undefined, selectedFilterId || undefined, startDate, days, '') }}>Todas</button><button className={`btn ${selectedFilialId === '1' ? 'primary' : ''}`} onClick={() => { setSelectedFilialId('1'); load(undefined, selectedFilterId || undefined, startDate, days, '1') }}>{filialNames['1']}</button><button className={`btn ${selectedFilialId === '2' ? 'primary' : ''}`} onClick={() => { setSelectedFilialId('2'); load(undefined, selectedFilterId || undefined, startDate, days, '2') }}>{filialNames['2']}</button></div><button className="btn" onClick={() => { setEditing(null); setBuilderOpen(true) }}>Novo filtro</button>{selectedFilterId && <button className="btn" onClick={() => setBuilderOpen(true)}>Salvar/Editar</button>}</div></header><PeriodControls startDate={startDate} days={days} onStartDate={(d) => { setStartDate(d); load(undefined, selectedFilterId || undefined, d, days) }} onDays={(d) => { setDays(d); load(undefined, selectedFilterId || undefined, startDate, d) }} /><AgendaBoard days={agendaDays} startDate={startDate} totalDays={days} loading={loading} selectedFilialId={selectedFilialId} filialNames={filialNames} /><FilterBuilder open={builderOpen} value={currentFilter} editingFilter={editing} onClose={() => setBuilderOpen(false)} onApply={(f) => { setCurrentFilter(f); setSelectedFilterId(''); load(f) }} onSave={save} onUpdate={update} /></section>
+  return <section>
+    <header className="topbar"><h2>Agenda técnica</h2><p>Operação por dia com capacidade</p></header>
+    <ActionBar
+      left={<div className="flex flex-wrap gap-2"><PillToggle active={selectedFilialId === ''} onClick={() => { setSelectedFilialId(''); load(undefined, selectedFilterId || undefined, startDate, days, '') }}>Todas</PillToggle><PillToggle active={selectedFilialId === '1'} onClick={() => { setSelectedFilialId('1'); load(undefined, selectedFilterId || undefined, startDate, days, '1') }}>F1 {filialNames['1']}</PillToggle><PillToggle active={selectedFilialId === '2'} onClick={() => { setSelectedFilialId('2'); load(undefined, selectedFilterId || undefined, startDate, days, '2') }}>F2 {filialNames['2']}</PillToggle></div>}
+      center={<div className="flex flex-wrap gap-2"><label>Início<input className={inputBaseClass} type="date" value={startDate} onChange={(e) => { const d = e.target.value; setStartDate(d); load(undefined, selectedFilterId || undefined, d, days) }} /></label><label>Dias<select className={inputBaseClass} value={days} onChange={(e) => { const d = Number(e.target.value); setDays(d); load(undefined, selectedFilterId || undefined, startDate, d) }}><option value={7}>7</option><option value={14}>14</option><option value={30}>30</option></select></label></div>}
+      right={<div className="flex flex-wrap items-end gap-2"><select className={inputBaseClass} value={selectedFilterId} onChange={(e) => { const id = e.target.value; setSelectedFilterId(id); const saved = filters.find((f) => f.id === id) || null; setEditing(saved); if (saved) { setCurrentFilter(saved.definition_json); load(undefined, id) } else load(currentFilter) }}><option value="">Filtro salvo</option>{filters.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}</select><button className="btn" onClick={() => { setEditing(null); setBuilderOpen(true) }}><Plus size={14} /> Novo filtro</button>{selectedFilterId && <button className="btn" onClick={() => setBuilderOpen(true)}><Save size={14} /> Salvar/Editar</button>}</div>}
+    />
+    <AgendaBoard days={agendaDays} startDate={startDate} totalDays={days} loading={loading} selectedFilialId={selectedFilialId} filialNames={filialNames} />
+    <FilterBuilder open={builderOpen} value={currentFilter} editingFilter={editing} onClose={() => setBuilderOpen(false)} onApply={(f) => { setCurrentFilter(f); setSelectedFilterId(''); load(f) }} onSave={save} onUpdate={update} />
+  </section>
 }
 
 function MaintenancesPage() {
+  const toast = useToast()
   const today = toISODate(new Date())
   const { filters, setFilters } = useSavedFilters('maintenances')
   const [selectedFilterId, setSelectedFilterId] = useState('')
@@ -180,26 +190,48 @@ function MaintenancesPage() {
   const [days, setDays] = useState(7)
   const [loading, setLoading] = useState(false)
   const [tab, setTab] = useState<'open' | 'scheduled' | 'done'>('open')
-  const [mode, setMode] = useState<'queue' | 'period'>('queue')
 
-  const load = (filter?: FilterDefinition, filterId?: string, s = startDate, d = days, activeTab = tab, activeMode = mode) => {
+  const load = async (filter?: FilterDefinition, filterId?: string, s = startDate, d = days, activeTab = tab) => {
     const to = addDays(s, d - 1)
-    const params = filterId ? new URLSearchParams({ tab: activeTab, ...(activeMode === 'period' ? { from: s, to } : {}), filter_id: filterId }) : new URLSearchParams({ tab: activeTab, ...(activeMode === 'period' ? { from: s, to } : {}), filter_json: JSON.stringify({ ...(filter || currentFilter), category: 'manutencao' }) })
+    const params = filterId ? new URLSearchParams({ tab: activeTab, from: s, to, filter_id: filterId }) : new URLSearchParams({ tab: activeTab, from: s, to, filter_json: JSON.stringify({ ...(filter || currentFilter), category: 'manutencao' }) })
     setLoading(true)
-    fetch(`${API}/dashboard/maintenances?${params}`).then((r) => r.json()).then(setItems).finally(() => setLoading(false))
+    try {
+      const payload = await fetch(`${API}/dashboard/maintenances?${params}`).then((r) => r.json()) as DashboardItem[]
+      setItems(payload)
+    } finally {
+      setLoading(false)
+    }
   }
-  useEffect(() => { load({ category: 'manutencao' }, '', today, 7, 'open', 'queue') }, [])
-  useEffect(() => { load(undefined, selectedFilterId || undefined, startDate, days, tab, mode) }, [tab, mode])
 
-  const save = (name: string, scope: FilterScope, definition_json: FilterDefinition) => fetch(`${API}/filters`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, scope, definition_json }) }).then((r) => r.json()).then((f: SavedFilter) => setFilters((prev) => [f, ...prev]))
-  const update = (id: string, name: string, scope: FilterScope, definition_json: FilterDefinition) => fetch(`${API}/filters/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, scope, definition_json }) }).then((r) => r.json()).then((u: SavedFilter) => setFilters((prev) => prev.map((f) => f.id === id ? u : f)))
+  useEffect(() => { load({ category: 'manutencao' }, '', today, 7, 'open') }, [])
+  useEffect(() => { load(undefined, selectedFilterId || undefined, startDate, days, tab) }, [tab])
 
-  return <section><header className="topbar"><h2>Manutenções</h2><div className="controls-row"><select value={selectedFilterId} onChange={(e) => { const id = e.target.value; setSelectedFilterId(id); const saved = filters.find((f) => f.id === id) || null; setEditing(saved); if (saved) load(undefined, id); else load(currentFilter) }}><option value="">Sem filtro salvo</option>{filters.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}</select><select value={mode} onChange={(e) => setMode(e.target.value as 'queue' | 'period')}><option value="queue">Fila (todas abertas)</option><option value="period">Por período</option></select><button className="btn" onClick={() => { setEditing(null); setBuilderOpen(true) }}>Novo filtro</button>{selectedFilterId && <button className="btn" onClick={() => setBuilderOpen(true)}>Salvar/Editar</button>}</div></header>{mode === 'period' && <PeriodControls startDate={startDate} days={days} onStartDate={(d) => { setStartDate(d); load(undefined, selectedFilterId || undefined, d, days, tab, mode) }} onDays={(d) => { setDays(d); load(undefined, selectedFilterId || undefined, startDate, d, tab, mode) }} />}<MaintenancesTable items={items} loading={loading} tab={tab} onTab={setTab} /><FilterBuilder open={builderOpen} value={currentFilter} editingFilter={editing} onClose={() => setBuilderOpen(false)} onApply={(f) => { setCurrentFilter(f); setSelectedFilterId(''); load(f) }} onSave={save} onUpdate={update} /></section>
+  const save = async (name: string, scope: FilterScope, definition_json: FilterDefinition) => {
+    try {
+      const f = await fetch(`${API}/filters`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, scope, definition_json }) }).then((r) => r.json()) as SavedFilter
+      setFilters((prev) => [f, ...prev])
+      toast.success('Filtro salvo com sucesso')
+    } catch {
+      toast.error('Falha ao salvar filtro')
+    }
+  }
+  const update = async (id: string, name: string, scope: FilterScope, definition_json: FilterDefinition) => {
+    try {
+      const u = await fetch(`${API}/filters/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, scope, definition_json }) }).then((r) => r.json()) as SavedFilter
+      setFilters((prev) => prev.map((f) => f.id === id ? u : f))
+      toast.success('Filtro atualizado com sucesso')
+    } catch {
+      toast.error('Falha ao atualizar filtro')
+    }
+  }
+
+  return <section><header className="topbar"><h2>Manutenções</h2><div className="controls-row"><select className={inputBaseClass} value={selectedFilterId} onChange={(e) => { const id = e.target.value; setSelectedFilterId(id); const saved = filters.find((f) => f.id === id) || null; setEditing(saved); if (saved) load(undefined, id); else load(currentFilter) }}><option value="">Sem filtro salvo</option>{filters.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}</select><button className="btn" onClick={() => { setEditing(null); setBuilderOpen(true) }}><Plus size={14} /> Novo filtro</button>{selectedFilterId && <button className="btn" onClick={() => setBuilderOpen(true)}><Save size={14} /> Salvar/Editar</button>}</div></header><div className="controls-row block"><label>Início<input className={inputBaseClass} type="date" value={startDate} onChange={(e) => { const d = e.target.value; setStartDate(d); load(undefined, selectedFilterId || undefined, d, days, tab) }} /></label><label>Dias<select className={inputBaseClass} value={days} onChange={(e) => { const d = Number(e.target.value); setDays(d); load(undefined, selectedFilterId || undefined, startDate, d, tab) }}><option value={7}>7</option><option value={14}>14</option><option value={30}>30</option></select></label></div><MaintenancesTable items={items} loading={loading} tab={tab} onTab={setTab} /><FilterBuilder open={builderOpen} value={currentFilter} editingFilter={editing} onClose={() => setBuilderOpen(false)} onApply={(f) => { setCurrentFilter(f); setSelectedFilterId(''); load(f) }} onSave={save} onUpdate={update} /></section>
 }
 
 const AdminOnly = ({ children }: { children: React.ReactNode }) => <>{children}</>
 
 function AdminPage() {
+  const toast = useToast()
   const [agendaFilters, setAgendaFilters] = useState<SavedFilter[]>([])
   const [maintFilters, setMaintFilters] = useState<SavedFilter[]>([])
   const [settings, setSettings] = useState<AppSettings | null>(null)
@@ -211,8 +243,29 @@ function AdminPage() {
   }
 
   useEffect(() => { loadAll() }, [])
-  const removeFilter = (id: string, scope: FilterScope) => fetch(`${API}/filters/${id}`, { method: 'DELETE' }).then(() => scope === 'agenda_week' ? setAgendaFilters((p) => p.filter((f) => f.id !== id)) : setMaintFilters((p) => p.filter((f) => f.id !== id)))
-  const saveSettings = () => settings && fetch(`${API}/settings`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(settings) }).then((r) => r.json()).then(setSettings)
+
+  const removeFilter = async (id: string, scope: FilterScope) => {
+    try {
+      await fetch(`${API}/filters/${id}`, { method: 'DELETE' })
+      if (scope === 'agenda_week') setAgendaFilters((p) => p.filter((f) => f.id !== id))
+      else setMaintFilters((p) => p.filter((f) => f.id !== id))
+      toast.success('Filtro excluído com sucesso')
+    } catch {
+      toast.error('Falha ao excluir filtro')
+    }
+  }
+
+  const saveSettings = async () => {
+    if (!settings) return
+    try {
+      const data = await fetch(`${API}/settings`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(settings) }).then((r) => r.json())
+      setSettings(data)
+      toast.success('Configurações salvas com sucesso')
+    } catch (error: any) {
+      toast.error(`Falha ao salvar: ${error?.message || 'erro desconhecido'}`)
+    }
+  }
+
   if (!settings) return <p>Carregando...</p>
 
   return <AdminOnly><section><header className="topbar"><h2>Admin</h2><p>Preparado para ACL futura</p></header>
@@ -226,11 +279,11 @@ function AdminPage() {
 }
 
 function Layout() {
-  return <main className="layout"><aside className="sidebar"><h1>Softhub</h1><nav><NavLink to="/dashboard">Dashboard</NavLink><NavLink to="/agenda">Agenda</NavLink><NavLink to="/manutencoes">Manutenções</NavLink><NavLink to="/admin">Admin</NavLink></nav></aside><section className="content"><Outlet /></section></main>
+  return <main className="layout"><aside className="sidebar"><h1>Softhub</h1><nav><NavLink to="/dashboard">Dashboard</NavLink><NavLink to="/agenda">Agenda</NavLink><NavLink to="/manutencoes">Manutenções</NavLink><NavLink to="/billing">Billing</NavLink><NavLink to="/admin">Admin</NavLink></nav></aside><section className="content"><Outlet /></section></main>
 }
 
 function AppRoutes() {
-  return <BrowserRouter><Routes><Route path="/" element={<Layout />}><Route index element={<Navigate to="/dashboard" replace />} /><Route path="dashboard" element={<DashboardPage />} /><Route path="agenda" element={<AgendaPage />} /><Route path="manutencoes" element={<MaintenancesPage />} /><Route path="admin" element={<AdminPage />} /></Route></Routes></BrowserRouter>
+  return <BrowserRouter><Routes><Route path="/" element={<Layout />}><Route index element={<Navigate to="/dashboard" replace />} /><Route path="dashboard" element={<DashboardPage apiBase={API} />} /><Route path="agenda" element={<AgendaPage />} /><Route path="manutencoes" element={<MaintenancesPage />} /><Route path="billing" element={<BillingPage apiBase={API} />} /><Route path="admin" element={<AdminPage />} /></Route></Routes></BrowserRouter>
 }
 
-createRoot(document.getElementById('root')!).render(<AppRoutes />)
+createRoot(document.getElementById('root')!).render(<ToastProvider><AppRoutes /></ToastProvider>)

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, datetime
+import logging
 from decimal import Decimal
 from typing import Any
 
@@ -9,6 +10,9 @@ from sqlalchemy import select
 
 from app.adapters.ixc_adapter import IXCAdapter
 from app.db import BillingAction, SessionLocal
+from app.utils.profiling import timer
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -85,50 +89,59 @@ def mark_action_if_new(action_key: str, external_id: str) -> bool:
         return True
 
 
+def list_billing_actions(limit: int = 200) -> list[dict[str, str]]:
+    with SessionLocal() as session:
+        rows = list(session.scalars(select(BillingAction).limit(limit)))
+        return [{'action_key': row.action_key, 'external_id': row.external_id} for row in rows]
+
+
 def build_billing_open_response(adapter: IXCAdapter) -> dict[str, Any]:
-    contas = adapter.list_contas_receber_abertas()
-    contas_enriq = enrich_contas_receber_with_contrato(adapter, contas)
+    with timer('billing.total', logger, {'endpoint': 'billing.open'}):
+        with timer('billing.fetch_open', logger):
+            contas = adapter.list_contas_receber_abertas()
+        with timer('billing.enrich_contract', logger, {'records': len(contas)}):
+            contas_enriq = enrich_contas_receber_with_contrato(adapter, contas)
 
-    oldest_due: date | None = None
-    over_20_days = 0
+        oldest_due: date | None = None
+        over_20_days = 0
+        items = []
 
-    items = []
-    for item in contas_enriq:
-        due = _parse_date(item.get('data_vencimento'))
-        if due and (oldest_due is None or due < oldest_due):
-            oldest_due = due
+        for item in contas_enriq:
+            due = _parse_date(item.get('data_vencimento'))
+            if due and (oldest_due is None or due < oldest_due):
+                oldest_due = due
 
-        if item['open_days'] >= 20:
-            over_20_days += 1
-            external_id = str(item.get('id'))
-            action_key = f'billing:{external_id}:open_ticket'
-            mark_action_if_new(action_key, external_id)
+            if item['open_days'] >= 20:
+                over_20_days += 1
+                external_id = str(item.get('id'))
+                action_key = f'billing:{external_id}:open_ticket'
+                mark_action_if_new(action_key, external_id)
 
-        items.append(
-            {
-                'external_id': item.get('id'),
-                'id_contrato': item.get('id_contrato'),
-                'id_cliente': item.get('id_cliente'),
-                'due_date': item.get('data_vencimento'),
-                'open_days': item.get('open_days'),
-                'amount_open': item.get('valor_aberto'),
-                'amount_total': item.get('valor'),
-                'payment_type': item.get('tipo_recebimento'),
-                'contract': {
-                    'id': item.get('contrato_id'),
-                    'status': item.get('contrato_status'),
-                    'status_internet': item.get('status_internet'),
-                    'situacao_financeira': item.get('situacao_financeira_contrato'),
-                    'pago_ate_data': item.get('pago_ate_data'),
-                    'id_vendedor': item.get('id_vendedor'),
-                    'plano_nome': item.get('plano_nome'),
-                },
-            }
+            items.append(
+                {
+                    'external_id': item.get('id'),
+                    'id_contrato': item.get('id_contrato'),
+                    'id_cliente': item.get('id_cliente'),
+                    'due_date': item.get('data_vencimento'),
+                    'open_days': item.get('open_days'),
+                    'amount_open': item.get('valor_aberto'),
+                    'amount_total': item.get('valor'),
+                    'payment_type': item.get('tipo_recebimento'),
+                    'contract': {
+                        'id': item.get('contrato_id'),
+                        'status': item.get('contrato_status'),
+                        'status_internet': item.get('status_internet'),
+                        'situacao_financeira': item.get('situacao_financeira_contrato'),
+                        'pago_ate_data': item.get('pago_ate_data'),
+                        'id_vendedor': item.get('id_vendedor'),
+                        'plano_nome': item.get('plano_nome'),
+                    },
+                }
+            )
+
+        summary = BillingSummary(
+            total_open=len(items),
+            over_20_days=over_20_days,
+            oldest_due_date=oldest_due.strftime('%Y-%m-%d') if oldest_due else None,
         )
-
-    summary = BillingSummary(
-        total_open=len(items),
-        over_20_days=over_20_days,
-        oldest_due_date=oldest_due.strftime('%Y-%m-%d') if oldest_due else None,
-    )
-    return {'summary': summary.__dict__, 'items': items}
+        return {'summary': summary.__dict__, 'items': items}

@@ -79,6 +79,23 @@ No `docker-compose.yml` (ou `.env` da API), altere:
 - `IXC_TOKEN=<token-webservice>`
 - `IXC_VERIFY_TLS=true|false`
 
+## Profiling e cache da dashboard
+
+Variáveis novas na API:
+
+- `SOFTHUB_PROFILE=1` ativa logs estruturados de profiling e endpoint de debug.
+- `DASHBOARD_CACHE_TTL_S=60` define TTL do cache do summary (sugestão: 30–120).
+
+Com profiling ativo:
+
+- logs mostram etapas com `elapsed_ms` (IXC/paginação/merge/summary)
+- endpoint `GET /debug/perf/last?limit=100` retorna últimos eventos de timing
+
+No endpoint `GET /dashboard/summary`, confira header:
+
+- `X-Cache: HIT` quando veio do Redis
+- `X-Cache: MISS` quando calculou e gravou no cache
+
 ## Testes principais
 
 ```bash
