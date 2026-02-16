@@ -16,6 +16,8 @@ services:
 
   core_api:
     build: ./services/core_api
+    volumes:
+    - ./services/core_api/app:/app/app
     env_file:
       - .env
     environment:
@@ -34,6 +36,9 @@ services:
 
   webapp:
     build: ./services/webapp
+    volumes:
+    - ./services/webapp:/app
+    - /app/node_modules
     depends_on:
       - core_api
     ports:
