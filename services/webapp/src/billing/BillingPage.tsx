@@ -51,9 +51,20 @@ export function BillingPage({ apiBase }: { apiBase: string }) {
           fetch(`${apiBase}/billing/open`),
           fetch(`${apiBase}/billing/actions?limit=100`),
         ])
-        if (!openRes.ok) throw new Error('Falha ao carregar contas em aberto')
+        if (!openRes.ok) {
+          const body = await openRes.text()
+          throw new Error(`Falha ao carregar contas em aberto (${openRes.status} ${openRes.statusText})\n${body.slice(0, 300)}`)
+        }
+
         const openJson = (await openRes.json()) as BillingOpenResponse
-        const actionsJson = actionsRes.ok ? ((await actionsRes.json()) as BillingAction[]) : []
+        let actionsJson: BillingAction[] = []
+        if (actionsRes.ok) {
+          actionsJson = (await actionsRes.json()) as BillingAction[]
+        } else {
+          const body = await actionsRes.text()
+          throw new Error(`Falha ao carregar ações de billing (${actionsRes.status} ${actionsRes.statusText})\n${body.slice(0, 300)}`)
+        }
+
         if (!cancelled) {
           setData(openJson)
           setActions(actionsJson)
@@ -106,7 +117,12 @@ export function BillingPage({ apiBase }: { apiBase: string }) {
       </header>
 
       {loading ? <div className="rounded-2xl border border-slate-200 bg-white p-6 text-slate-500">Carregando billing...</div> : null}
-      {error ? <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-rose-700">{error}</div> : null}
+      {error ? (
+        <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-rose-700">
+          <p className="font-semibold">Erro ao carregar billing</p>
+          <pre className="mt-2 whitespace-pre-wrap text-xs">{error}</pre>
+        </div>
+      ) : null}
 
       {!loading && data ? (
         <>
@@ -168,15 +184,20 @@ export function BillingPage({ apiBase }: { apiBase: string }) {
                     <td className="px-3 py-2">{item.payment_type || '-'}</td>
                     <td className="px-3 py-2">
                       <div className="flex flex-col text-xs">
-                        <span>{item.contract.status || '-'}</span>
-                        <span className="text-slate-500">Internet: {item.contract.status_internet || '-'}</span>
-                        <span className="text-slate-500">Financeiro: {item.contract.situacao_financeira || '-'}</span>
-                        <span className="text-slate-500">Vendedor: {item.contract.id_vendedor || '-'}</span>
-                        <span className="text-slate-500">Plano: {item.contract.plano_nome || '-'}</span>
+                        <span>{item.contract?.status || '-'}</span>
+                        <span className="text-slate-500">Internet: {item.contract?.status_internet || '-'}</span>
+                        <span className="text-slate-500">Financeiro: {item.contract?.situacao_financeira || '-'}</span>
+                        <span className="text-slate-500">Vendedor: {item.contract?.id_vendedor || '-'}</span>
+                        <span className="text-slate-500">Plano: {item.contract?.plano_nome || '-'}</span>
                       </div>
                     </td>
                   </tr>
                 ))}
+                {filtered.length === 0 ? (
+                  <tr>
+                    <td colSpan={8} className="px-3 py-6 text-center text-slate-500">Sem itens</td>
+                  </tr>
+                ) : null}
               </tbody>
             </table>
           </div>

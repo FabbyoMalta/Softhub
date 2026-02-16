@@ -13,7 +13,7 @@ import { PillToggle } from './components/PillToggle'
 import { ToastProvider, useToast } from './components/Toast'
 import type { AgendaDay, AgendaWeekResponse, AppSettings, DashboardItem, FilterDefinition, FilterScope, SavedFilter } from './types'
 
-const API = 'http://localhost:8000'
+const API = (import.meta.env.VITE_API_BASE ?? 'http://localhost:8000').replace(/\/$/, '')
 const STATUS_OPTIONS = ['A', 'AN', 'EN', 'AS', 'AG', 'DS', 'EX', 'F', 'RAG']
 const WEEKDAYS: Array<'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun'> = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
 const dayLabelFormatter = new Intl.DateTimeFormat('pt-BR', { weekday: 'short' })
