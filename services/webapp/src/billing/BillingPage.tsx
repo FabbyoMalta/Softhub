@@ -46,10 +46,13 @@ export function BillingPage({ apiBase }: { apiBase: string }) {
     const run = async () => {
       setLoading(true)
       setError(null)
+      const openUrl = `${apiBase}/billing/open`
+      const actionsUrl = `${apiBase}/billing/actions?limit=100`
+      console.info('[BillingPage] loading data', { openUrl, actionsUrl })
       try {
         const [openRes, actionsRes] = await Promise.all([
-          fetch(`${apiBase}/billing/open`),
-          fetch(`${apiBase}/billing/actions?limit=100`),
+          fetch(openUrl),
+          fetch(actionsUrl),
         ])
         if (!openRes.ok) {
           const body = await openRes.text()
