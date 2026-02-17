@@ -69,6 +69,29 @@ docker compose up -d --build
 - API: `http://localhost:8000`
 - Frontend: `http://localhost:5173/dashboard`
 
+### URLs de acesso (SPA + Billing)
+
+- **Dev recomendado:** abra o frontend em `http://localhost:5173`.
+- **Também suportado:** `http://localhost:8000` com fallback SPA no FastAPI (ex.: `/billing`, `/agenda`, `/manutencoes`).
+
+Para configurar a base da API no frontend (`services/webapp`):
+
+- `VITE_API_BASE=http://localhost:8000` para desenvolvimento local em portas separadas.
+- `VITE_API_BASE=` (string vazia/same-origin) quando frontend e API estão no mesmo host/porta via reverse proxy.
+
+Exemplo:
+
+```bash
+cd services/webapp
+VITE_API_BASE=http://localhost:8000 npm run dev
+```
+
+Teste rápido de endpoints de billing sem `curl` (via Python):
+
+```bash
+python -c "import requests; print(requests.get('http://localhost:8000/billing/open', timeout=20).status_code); print(requests.get('http://localhost:8000/billing/actions?limit=5', timeout=20).status_code)"
+```
+
 ## Modo REAL (IXC)
 
 No `docker-compose.yml` (ou `.env` da API), altere:

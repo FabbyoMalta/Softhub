@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     database_url: str = Field(default='postgresql+psycopg://postgres:postgres@postgres:5432/softhub', alias='DATABASE_URL')
     softhub_profile: bool = Field(default=False, alias='SOFTHUB_PROFILE')
     dashboard_cache_ttl_s: int = Field(default=60, alias='DASHBOARD_CACHE_TTL_S')
+    frontend_dev_url: str = Field(default='http://localhost:5173', alias='FRONTEND_DEV_URL')
 
 
 @lru_cache
