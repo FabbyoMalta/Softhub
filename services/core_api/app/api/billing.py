@@ -72,14 +72,28 @@ def get_billing_actions(limit: int = Query(default=200, ge=1, le=1000)):
 
 @router.post('/sync', response_model=BillingSyncOut)
 def post_billing_sync(
-    min_days: int = Query(default=20, ge=0),
     due_from: date | None = Query(default=None),
-    due_to: date | None = Query(default=None),
+    only_open: bool = Query(default=True),
     filial_id: str | None = Query(default=None),
+    limit_pages: int = Query(default=5, ge=1, le=20),
+    rp: int = Query(default=500, ge=50, le=1000),
     adapter=Depends(get_ixc_adapter),
 ):
-    result = sync_billing_cases(adapter=adapter, min_days=min_days, due_from=due_from, due_to=due_to, filial_id=filial_id)
-    return BillingSyncOut(synced=result.synced, upserted=result.upserted, duration_ms=result.duration_ms)
+    result = sync_billing_cases(
+        adapter=adapter,
+        due_from=due_from,
+        only_open=only_open,
+        filial_id=filial_id,
+        limit_pages=limit_pages,
+        rp=rp,
+    )
+    return BillingSyncOut(
+        synced=result.synced,
+        upserted=result.upserted,
+        duration_ms=result.duration_ms,
+        due_from_used=result.due_from_used,
+        only_open_used=result.only_open_used,
+    )
 
 
 @router.post('/enrich', response_model=BillingEnrichOut)
@@ -167,20 +181,23 @@ def get_ticket_config_check():
 
 @router.get('/cases', response_model=list[BillingCaseOut])
 def get_billing_cases(
-    status: str = Query(default='OPEN'),
+    status: str = Query(default='open'),
     filial_id: str | None = Query(default=None),
     min_days: int | None = Query(default=None, ge=0),
+    only_over_20_days: bool = Query(default=False),
     due_from: date | None = Query(default=None),
     due_to: date | None = Query(default=None),
     limit: int = Query(default=50, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
 ):
     with SessionLocal() as db:
-        query = db.query(BillingCase).filter(BillingCase.status_case == status)
+        resolved_status = status.upper()
+        query = db.query(BillingCase).filter(BillingCase.status_case == resolved_status)
         if filial_id:
             query = query.filter(BillingCase.filial_id == filial_id)
-        if min_days is not None:
-            query = query.filter(BillingCase.open_days >= min_days)
+        effective_min_days = 20 if only_over_20_days and min_days is None else min_days
+        if effective_min_days is not None:
+            query = query.filter(BillingCase.open_days >= effective_min_days)
         if due_from:
             query = query.filter(BillingCase.due_date >= due_from)
         if due_to:
@@ -216,3 +233,26 @@ def get_billing_cases_summary(
 
     by_filial = {row[0] or 'UNKNOWN': row[1] for row in by_filial_rows}
     return BillingCasesSummaryOut(total_cases=totals[0], total_amount_open=Decimal(totals[1]), oldest_due_date=totals[2], by_filial=by_filial)
+
+
+@router.get('/summary')
+def get_billing_summary(
+    only_over_20_days: bool = Query(default=False),
+    status: str = Query(default='open'),
+):
+    with SessionLocal() as db:
+        query = db.query(BillingCase).filter(BillingCase.status_case == status.upper())
+        if only_over_20_days:
+            query = query.filter(BillingCase.open_days >= 20)
+
+        total_open, amount_open_sum = query.with_entities(
+            func.count(BillingCase.id),
+            func.coalesce(func.sum(BillingCase.amount_open), 0),
+        ).one()
+        over_20 = query.filter(BillingCase.open_days >= 20).count()
+
+    return {
+        'total_open': total_open,
+        'over_20': over_20,
+        'amount_open_sum': str(Decimal(amount_open_sum)),
+    }

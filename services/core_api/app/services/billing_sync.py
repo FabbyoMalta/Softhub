@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from time import perf_counter
 from typing import Any
@@ -17,6 +17,8 @@ class BillingSyncResult:
     synced: int
     upserted: int
     duration_ms: float
+    due_from_used: str
+    only_open_used: bool
 
 
 def _parse_date(raw: Any) -> date | None:
@@ -38,23 +40,26 @@ def _parse_decimal(raw: Any) -> Decimal:
 
 def sync_billing_cases(
     adapter: IXCAdapter,
-    min_days: int = 20,
     due_from: date | None = None,
-    due_to: date | None = None,
+    only_open: bool = True,
     filial_id: str | None = None,
+    rp: int = 500,
+    limit_pages: int = 5,
 ) -> BillingSyncResult:
     started_at = perf_counter()
     now = datetime.utcnow()
     today = date.today()
-    rows = adapter.list_contas_receber_atrasadas(
-        min_days=min_days,
-        due_from=due_from,
-        due_to=due_to,
+    due_from_resolved = due_from or (today - timedelta(days=120))
+
+    rows = adapter.list_contas_receber_para_sync(
+        due_from=due_from_resolved,
+        only_open=only_open,
         filial_id=filial_id,
+        rp=rp,
+        limit_pages=limit_pages,
     )
 
     upserted = 0
-
     with SessionLocal() as db:
         for row in rows:
             external_id = str(row.get('id') or '').strip()
@@ -64,12 +69,12 @@ def sync_billing_cases(
 
             amount_open = _parse_decimal(row.get('valor_aberto'))
             due_date = _parse_date(row.get('data_vencimento'))
-            if amount_open <= 0 or due_date is None:
+            if due_date is None:
                 continue
 
-            open_days = max(0, (today - due_date).days)
-            if open_days < max(min_days, 0):
-                continue
+            open_days = 0
+            if amount_open > 0:
+                open_days = max(0, (today - due_date).days)
 
             existing = db.scalar(select(BillingCase).where(BillingCase.external_id == external_id))
             if existing is None:
@@ -86,8 +91,8 @@ def sync_billing_cases(
             existing.amount_open = amount_open
             existing.payment_type = (str(row.get('tipo_recebimento') or '').strip() or None)
             existing.open_days = open_days
-            existing.status_case = 'OPEN'
-            if not existing.ticket_id:
+            existing.status_case = 'OPEN' if amount_open > 0 else 'RESOLVED'
+            if existing.status_case == 'OPEN' and not existing.ticket_id:
                 existing.action_state = 'READY'
             existing.last_seen_at = now
             existing.snapshot_json = {
@@ -104,4 +109,6 @@ def sync_billing_cases(
         synced=len(rows),
         upserted=upserted,
         duration_ms=round((perf_counter() - started_at) * 1000, 2),
+        due_from_used=due_from_resolved.isoformat(),
+        only_open_used=only_open,
     )

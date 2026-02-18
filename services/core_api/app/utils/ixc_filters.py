@@ -29,6 +29,21 @@ def build_filters_contas_em_aberto() -> list[dict[str, str]]:
     return [_filter('fn_areceber.valor_aberto', '>', '0')]
 
 
+def build_filters_contas_para_sync(
+    due_from: date,
+    only_open: bool = True,
+    filial_id: str | None = None,
+) -> list[dict[str, str]]:
+    filters: list[dict[str, str]] = [
+        _filter('fn_areceber.data_vencimento', '>=', due_from.strftime('%Y-%m-%d')),
+    ]
+    if only_open:
+        filters.append(_filter('fn_areceber.valor_aberto', '>', '0'))
+    if filial_id is not None and filial_id.strip():
+        filters.append(_filter('fn_areceber.filial_id', '=', filial_id.strip()))
+    return filters
+
+
 def build_filters_contas_atrasadas(
     cutoff_due_date: date,
     due_from: date | None = None,
@@ -51,10 +66,6 @@ def build_filters_contas_atrasadas(
 
 
 def build_filters_os_agendadas(start: date, end: date, tipo: str) -> list[dict[str, str]]:
-    """
-    TODO(ixc-field-mapping): confirmar TBs reais de data agendada/status/tipo em su_oss_chamado.
-    Mantido parametrizado para facilitar ajuste por ambiente IXC.
-    """
     return [
         _filter(TB_OS_DATA_AGENDADA, '>=', start.strftime('%Y-%m-%d')),
         _filter(TB_OS_DATA_AGENDADA, '<=', end.strftime('%Y-%m-%d')),
@@ -63,5 +74,4 @@ def build_filters_os_agendadas(start: date, end: date, tipo: str) -> list[dict[s
 
 
 def build_filters_tickets_by_status(status: str) -> list[dict[str, str]]:
-    """TODO(ixc-field-mapping): confirmar TB exato para status em su_ticket."""
     return [_filter(TB_TICKET_STATUS, '=', status)]

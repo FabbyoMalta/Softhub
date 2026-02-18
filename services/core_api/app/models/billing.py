@@ -77,6 +77,8 @@ class BillingSyncOut(BaseModel):
     synced: int
     upserted: int
     duration_ms: float
+    due_from_used: str
+    only_open_used: bool
 
 
 class BillingEnrichOut(BaseModel):

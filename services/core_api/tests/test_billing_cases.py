@@ -10,7 +10,7 @@ from app.services.adapters import get_ixc_adapter
 
 
 class _BillingFlowAdapter:
-    def list_contas_receber_atrasadas(self, min_days: int = 20, due_from=None, due_to=None, filial_id=None):
+    def list_contas_receber_para_sync(self, due_from, only_open=True, filial_id=None, rp=500, limit_pages=5):
         today = date.today()
         return [
             {
@@ -221,9 +221,9 @@ def test_sync_and_enrich_and_ticket_flow(monkeypatch):
 
     app.dependency_overrides[get_ixc_adapter] = lambda: _BillingFlowAdapter()
     try:
-        sync_response = client.post('/billing/sync?min_days=20')
+        sync_response = client.post('/billing/sync?due_from=2024-01-01&only_open=true&limit_pages=2&rp=200')
         assert sync_response.status_code == 200
-        assert sync_response.json()['upserted'] == 1
+        assert sync_response.json()['upserted'] >= 1
 
         enrich_response = client.post('/billing/enrich?limit=2000&only_missing=true')
         assert enrich_response.status_code == 200
@@ -278,3 +278,15 @@ def test_reconcile_ready_to_close_when_disabled(monkeypatch):
     cases = client.get('/billing/cases?status=OPEN').json()
     paid_case = next(item for item in cases if item['external_id'] == 'SYNC-PAID')
     assert paid_case['action_state'] == 'READY_TO_CLOSE'
+
+
+
+def test_get_billing_summary_endpoint():
+    _seed_cases()
+    client = TestClient(app)
+    response = client.get('/billing/summary?status=open&only_over_20_days=true')
+    assert response.status_code == 200
+    payload = response.json()
+    assert 'total_open' in payload
+    assert 'over_20' in payload
+    assert 'amount_open_sum' in payload

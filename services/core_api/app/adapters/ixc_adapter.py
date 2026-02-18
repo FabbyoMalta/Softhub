@@ -7,7 +7,12 @@ from typing import Any, Protocol
 from app.clients.ixc_client import IXCClient, IXCClientError
 from app.config import get_settings
 from app.services.ixc_grid_builder import TB_OS_ID_CLIENTE
-from app.utils.ixc_filters import build_filters_contas_atrasadas, build_filters_contas_em_aberto, build_filters_contrato_by_id
+from app.utils.ixc_filters import (
+    build_filters_contas_atrasadas,
+    build_filters_contas_em_aberto,
+    build_filters_contas_para_sync,
+    build_filters_contrato_by_id,
+)
 
 
 class IXCAdapter(Protocol):
@@ -26,6 +31,15 @@ class IXCAdapter(Protocol):
     ) -> list[dict[str, Any]]: ...
 
     def list_contas_receber_by_ids(self, external_ids: list[str]) -> list[dict[str, Any]]: ...
+
+    def list_contas_receber_para_sync(
+        self,
+        due_from: date,
+        only_open: bool = True,
+        filial_id: str | None = None,
+        rp: int = 500,
+        limit_pages: int = 5,
+    ) -> list[dict[str, Any]]: ...
 
     def list_service_orders(self, grid_filters: list[dict[str, Any]]) -> list[dict[str, Any]]: ...
 
@@ -92,6 +106,33 @@ class RealIXCAdapter:
             filters = [{'TB': 'fn_areceber.id', 'OP': 'IN', 'P': ','.join(batch)}]
             out.extend(self.client.iterate_all(self.ENDPOINT_ARECEBER, filters, rp=1000, sortname='id'))
         return out
+
+    def list_contas_receber_para_sync(
+        self,
+        due_from: date,
+        only_open: bool = True,
+        filial_id: str | None = None,
+        rp: int = 500,
+        limit_pages: int = 5,
+    ) -> list[dict[str, Any]]:
+        filters = build_filters_contas_para_sync(due_from=due_from, only_open=only_open, filial_id=filial_id)
+        records: list[dict[str, Any]] = []
+        page = 1
+        while page <= max(1, limit_pages):
+            data = self.client.post_list(
+                endpoint=self.ENDPOINT_ARECEBER,
+                grid_filters=filters,
+                page=page,
+                rp=max(1, rp),
+                sortname='id',
+                sortorder='asc',
+            )
+            rows = data.get('registros') or []
+            records.extend(rows)
+            if len(rows) < max(1, rp):
+                break
+            page += 1
+        return records
 
     def list_service_orders(self, grid_filters: list[dict[str, Any]]) -> list[dict[str, Any]]:
         return self.client.iterate_all(self.ENDPOINT_OSS, grid_filters, sortname='id')
@@ -252,6 +293,33 @@ class MockIXCAdapter:
     def list_contas_receber_by_ids(self, external_ids: list[str]) -> list[dict[str, Any]]:
         wanted = {str(i) for i in external_ids}
         return [r for r in self.list_contas_receber_abertas() if str(r.get('id')) in wanted]
+
+    def list_contas_receber_para_sync(
+        self,
+        due_from: date,
+        only_open: bool = True,
+        filial_id: str | None = None,
+        rp: int = 500,
+        limit_pages: int = 5,
+    ) -> list[dict[str, Any]]:
+        filters = build_filters_contas_para_sync(due_from=due_from, only_open=only_open, filial_id=filial_id)
+        records: list[dict[str, Any]] = []
+        page = 1
+        while page <= max(1, limit_pages):
+            data = self.client.post_list(
+                endpoint=self.ENDPOINT_ARECEBER,
+                grid_filters=filters,
+                page=page,
+                rp=max(1, rp),
+                sortname='id',
+                sortorder='asc',
+            )
+            rows = data.get('registros') or []
+            records.extend(rows)
+            if len(rows) < max(1, rp):
+                break
+            page += 1
+        return records
 
     def list_service_orders(self, grid_filters: list[dict[str, Any]]) -> list[dict[str, Any]]:
         rng = Random(42)
