@@ -29,11 +29,25 @@ def build_filters_contas_em_aberto() -> list[dict[str, str]]:
     return [_filter('fn_areceber.valor_aberto', '>', '0')]
 
 
-def build_filters_contas_atrasadas(today: date) -> list[dict[str, str]]:
-    return [
+def build_filters_contas_atrasadas(
+    cutoff_due_date: date,
+    due_from: date | None = None,
+    due_to: date | None = None,
+    filial_id: str | None = None,
+) -> list[dict[str, str]]:
+    filters = [
         _filter('fn_areceber.valor_aberto', '>', '0'),
-        _filter('fn_areceber.data_vencimento', '<=', today.strftime('%Y-%m-%d')),
+        _filter('fn_areceber.data_vencimento', '<=', cutoff_due_date.strftime('%Y-%m-%d')),
     ]
+
+    if due_from is not None:
+        filters.append(_filter('fn_areceber.data_vencimento', '>=', due_from.strftime('%Y-%m-%d')))
+    if due_to is not None:
+        filters.append(_filter('fn_areceber.data_vencimento', '<=', due_to.strftime('%Y-%m-%d')))
+    if filial_id is not None and filial_id.strip():
+        filters.append(_filter('fn_areceber.filial_id', '=', filial_id.strip()))
+
+    return filters
 
 
 def build_filters_os_agendadas(start: date, end: date, tipo: str) -> list[dict[str, str]]:
