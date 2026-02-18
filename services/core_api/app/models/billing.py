@@ -59,6 +59,11 @@ class BillingCaseOut(BaseModel):
     last_seen_at: datetime
     action_state: str
     last_action_at: datetime | None = None
+    ticket_id: str | None = None
+    ticket_status: str | None = None
+    contract_json: dict | None = None
+    client_json: dict | None = None
+    contract_missing: bool = False
 
 
 class BillingCasesSummaryOut(BaseModel):
@@ -72,3 +77,55 @@ class BillingSyncOut(BaseModel):
     synced: int
     upserted: int
     duration_ms: float
+
+
+class BillingEnrichOut(BaseModel):
+    updated: int
+    duration_ms: float
+
+
+class BillingTicketDryRunOut(BaseModel):
+    case_id: str
+    eligible: bool
+    warnings: list[str]
+    payload: dict | None = None
+    validation_error: str | None = None
+
+
+class BillingBatchFilters(BaseModel):
+    status: str | None = 'OPEN'
+    filial_id: str | None = None
+    min_days: int | None = None
+    due_from: str | None = None
+    due_to: str | None = None
+
+
+class BillingTicketBatchIn(BaseModel):
+    case_ids: list[str] | None = None
+    filters: BillingBatchFilters | None = None
+    limit: int | None = 50
+    require_confirm: bool | None = None
+
+
+class BillingTicketBatchDryRunOut(BaseModel):
+    count: int
+    sample: list[dict]
+    warnings: list[str]
+
+
+class BillingTicketCreateOut(BaseModel):
+    already_created: bool
+    ticket_id: str
+
+
+class BillingTicketBatchOut(BaseModel):
+    created: int
+    skipped: int
+    errors: int
+    duration_ms: float
+
+
+class BillingReconcileOut(BaseModel):
+    closed: int
+    would_close: int
+    errors: int

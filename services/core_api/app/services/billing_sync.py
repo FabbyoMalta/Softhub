@@ -87,6 +87,8 @@ def sync_billing_cases(
             existing.payment_type = (str(row.get('tipo_recebimento') or '').strip() or None)
             existing.open_days = open_days
             existing.status_case = 'OPEN'
+            if not existing.ticket_id:
+                existing.action_state = 'READY'
             existing.last_seen_at = now
             existing.snapshot_json = {
                 'id_contrato': row.get('id_contrato'),

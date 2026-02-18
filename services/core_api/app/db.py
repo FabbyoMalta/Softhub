@@ -4,7 +4,7 @@ from datetime import date, datetime, timedelta
 from decimal import Decimal
 from uuid import uuid4
 
-from sqlalchemy import JSON, Date, DateTime, Integer, Numeric, String, create_engine
+from sqlalchemy import JSON, Boolean, Date, DateTime, ForeignKey, Integer, Numeric, String, Text, create_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
 
 from app.config import get_settings
@@ -56,6 +56,25 @@ class BillingCase(Base):
     action_state: Mapped[str] = mapped_column(String(64), nullable=False, default='NONE')
     last_action_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     snapshot_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
+    contract_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    client_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    contract_missing: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+    ticket_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    ticket_status: Mapped[str | None] = mapped_column(String(32), nullable=True)
+
+
+class BillingActionLog(Base):
+    __tablename__ = 'billing_action_log'
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    case_id: Mapped[str] = mapped_column(String(36), ForeignKey('billing_case.id'), nullable=False)
+    action_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
+    payload_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    success: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 settings = get_settings()
