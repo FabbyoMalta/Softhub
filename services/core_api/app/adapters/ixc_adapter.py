@@ -6,13 +6,21 @@ from typing import Any, Protocol
 
 from app.clients.ixc_client import IXCClient, IXCClientError
 from app.services.ixc_grid_builder import TB_OS_ID_CLIENTE
-from app.utils.ixc_filters import build_filters_contas_em_aberto, build_filters_contrato_by_id
+from app.utils.ixc_filters import build_filters_contas_atrasadas, build_filters_contas_em_aberto, build_filters_contrato_by_id
 
 
 class IXCAdapter(Protocol):
     def list_contratos(self, filters: dict[str, Any] | None = None) -> list[dict[str, Any]]: ...
 
     def list_contas_receber_abertas(self) -> list[dict[str, Any]]: ...
+
+    def list_contas_receber_atrasadas(
+        self,
+        min_days: int = 20,
+        due_from: date | None = None,
+        due_to: date | None = None,
+        filial_id: str | None = None,
+    ) -> list[dict[str, Any]]: ...
 
     def list_service_orders(self, grid_filters: list[dict[str, Any]]) -> list[dict[str, Any]]: ...
 
@@ -38,6 +46,22 @@ class RealIXCAdapter:
 
     def list_contas_receber_abertas(self) -> list[dict[str, Any]]:
         return self.client.iterate_all(self.ENDPOINT_ARECEBER, build_filters_contas_em_aberto(), sortname='id')
+
+    def list_contas_receber_atrasadas(
+        self,
+        min_days: int = 20,
+        due_from: date | None = None,
+        due_to: date | None = None,
+        filial_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        cutoff_due_date = date.today() - timedelta(days=max(min_days, 0))
+        filters = build_filters_contas_atrasadas(
+            cutoff_due_date=cutoff_due_date,
+            due_from=due_from,
+            due_to=due_to,
+            filial_id=filial_id,
+        )
+        return self.client.iterate_all(self.ENDPOINT_ARECEBER, filters, rp=1000, sortname='id')
 
     def list_service_orders(self, grid_filters: list[dict[str, Any]]) -> list[dict[str, Any]]:
         return self.client.iterate_all(self.ENDPOINT_OSS, grid_filters, sortname='id')
@@ -113,6 +137,34 @@ class MockIXCAdapter:
                 'linha_digitavel': '',
             },
         ]
+
+    def list_contas_receber_atrasadas(
+        self,
+        min_days: int = 20,
+        due_from: date | None = None,
+        due_to: date | None = None,
+        filial_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        cutoff = date.today() - timedelta(days=max(min_days, 0))
+        rows = [r for r in self.list_contas_receber_abertas() if r.get('valor_aberto') not in {'0', '0.00'}]
+
+        out: list[dict[str, Any]] = []
+        for row in rows:
+            due_raw = str(row.get('data_vencimento') or '')
+            try:
+                due = date.fromisoformat(due_raw)
+            except ValueError:
+                continue
+            if due > cutoff:
+                continue
+            if due_from and due < due_from:
+                continue
+            if due_to and due > due_to:
+                continue
+            if filial_id and str(row.get('filial_id') or '').strip() != filial_id:
+                continue
+            out.append(row)
+        return out
 
     def list_service_orders(self, grid_filters: list[dict[str, Any]]) -> list[dict[str, Any]]:
         rng = Random(42)
