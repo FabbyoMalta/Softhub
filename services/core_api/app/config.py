@@ -19,15 +19,18 @@ class Settings(BaseSettings):
     ixc_client_endpoint: str = Field(default='cliente', alias='IXC_CLIENT_ENDPOINT')
 
     billing_ticket_batch_limit: int = Field(default=50, alias='BILLING_TICKET_BATCH_LIMIT')
-    billing_ticket_endpoint: str | None = Field(default=None, alias='BILLING_TICKET_ENDPOINT')
+    billing_ticket_endpoint: str = Field(default='su_ticket', alias='BILLING_TICKET_ENDPOINT')
     billing_ticket_action: str = Field(default='inserir', alias='BILLING_TICKET_ACTION')
     billing_ticket_setor_id: str | None = Field(default=None, alias='BILLING_TICKET_SETOR_ID')
     billing_ticket_assunto_id: str | None = Field(default=None, alias='BILLING_TICKET_ASSUNTO_ID')
+    billing_ticket_prioridade: str = Field(default='M', alias='BILLING_TICKET_PRIORIDADE')
+    billing_ticket_enable: bool = Field(default=False, alias='BILLING_TICKET_ENABLE')
+    billing_ticket_daily_limit: int = Field(default=20, alias='BILLING_TICKET_DAILY_LIMIT')
     billing_ticket_mensagem_template: str = Field(
         default='Cobranca preventiva: cliente={id_cliente} contrato={id_contrato} titulo={external_id} vencimento={due_date} dias={open_days} valor={amount_open} filial={filial_id} plano={plano_nome}',
         alias='BILLING_TICKET_MENSAGEM_TEMPLATE',
     )
-    billing_ticket_close_endpoint: str | None = Field(default=None, alias='BILLING_TICKET_CLOSE_ENDPOINT')
+    billing_ticket_close_endpoint: str = Field(default='su_ticket', alias='BILLING_TICKET_CLOSE_ENDPOINT')
     billing_ticket_close_action: str = Field(default='editar', alias='BILLING_TICKET_CLOSE_ACTION')
 
     billing_autoclose_enabled: bool = Field(default=False, alias='BILLING_AUTOCLOSE_ENABLED')

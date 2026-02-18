@@ -44,10 +44,16 @@ export function BillingPage({ apiBase }: { apiBase: string }) {
       const [casesRes, summaryRes, cfgRes] = await Promise.all([fetch(casesUrl), fetch(summaryUrl), fetch(cfgUrl)])
       const casesPayload = await parseApi<BillingCase[]>(casesRes)
       const summaryPayload = await parseApi<{ total_open: number; over_20: number; amount_open_sum: string }>(summaryRes)
-      const cfgPayload = await parseApi<{ ok: boolean; missing: string[] }>(cfgRes)
+      const cfgPayload = await parseApi<{ ok: boolean; missing: string[]; enabled: boolean }>(cfgRes)
       setCases(casesPayload)
       setSummary(summaryPayload)
-      setConfigWarning(cfgPayload.ok ? null : `Configurações ausentes: ${cfgPayload.missing.join(', ')}`)
+      if (!cfgPayload.enabled) {
+        setConfigWarning('Tickets desabilitados (modo manual).')
+      } else if (!cfgPayload.ok) {
+        setConfigWarning(`Configurações ausentes: ${cfgPayload.missing.join(', ')}`)
+      } else {
+        setConfigWarning(null)
+      }
     } catch (err: any) {
       setError(err?.message || 'Erro ao carregar billing')
     } finally {

@@ -164,19 +164,27 @@ def post_tickets_reconcile(
     return BillingReconcileOut(**result)
 
 
+
+
+@router.post('/cases/tickets', response_model=BillingTicketBatchOut)
+def post_cases_tickets(body: BillingTicketBatchIn, adapter=Depends(get_ixc_adapter)):
+    return post_tickets_batch(body, adapter)
+
+
+@router.post('/cases/reconcile', response_model=BillingReconcileOut)
+def post_cases_reconcile(limit: int = Query(default=1000, ge=1, le=5000), adapter=Depends(get_ixc_adapter)):
+    return post_tickets_reconcile(limit=limit, adapter=adapter)
+
 @router.get('/ticket-config/check')
 def get_ticket_config_check():
     s = get_settings()
     missing = []
-    if not s.billing_ticket_endpoint:
-        missing.append('BILLING_TICKET_ENDPOINT')
-    if not s.billing_ticket_setor_id:
-        missing.append('BILLING_TICKET_SETOR_ID')
-    if not s.billing_ticket_assunto_id:
-        missing.append('BILLING_TICKET_ASSUNTO_ID')
-    if not s.billing_ticket_close_endpoint:
-        missing.append('BILLING_TICKET_CLOSE_ENDPOINT')
-    return {'ok': not missing, 'missing': missing, 'autoclose_enabled': s.billing_autoclose_enabled}
+    if s.billing_ticket_enable:
+        if not s.billing_ticket_setor_id:
+            missing.append('BILLING_TICKET_SETOR_ID')
+        if not s.billing_ticket_assunto_id:
+            missing.append('BILLING_TICKET_ASSUNTO_ID')
+    return {'ok': not missing, 'missing': missing, 'enabled': s.billing_ticket_enable, 'autoclose_enabled': s.billing_autoclose_enabled}
 
 
 @router.get('/cases', response_model=list[BillingCaseOut])

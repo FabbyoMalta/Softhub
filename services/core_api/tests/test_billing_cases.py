@@ -214,7 +214,9 @@ def test_get_billing_cases_summary_matches_listing_count():
 def test_sync_and_enrich_and_ticket_flow(monkeypatch):
     _seed_cases()
     client = TestClient(app)
+    monkeypatch.setenv('BILLING_TICKET_ENABLE', 'true')
     monkeypatch.setenv('BILLING_TICKET_ENDPOINT', 'su_ticket')
+    monkeypatch.setenv('BILLING_TICKET_CLOSE_ENDPOINT', 'su_ticket')
     monkeypatch.setenv('BILLING_TICKET_SETOR_ID', '1')
     monkeypatch.setenv('BILLING_TICKET_ASSUNTO_ID', '2')
     get_settings.cache_clear()
@@ -290,3 +292,25 @@ def test_get_billing_summary_endpoint():
     assert 'total_open' in payload
     assert 'over_20' in payload
     assert 'amount_open_sum' in payload
+
+
+
+def test_reconcile_closes_when_enabled(monkeypatch):
+    _seed_cases()
+    client = TestClient(app)
+    monkeypatch.setenv('BILLING_TICKET_ENABLE', 'true')
+    monkeypatch.setenv('BILLING_TICKET_SETOR_ID', '1')
+    monkeypatch.setenv('BILLING_TICKET_ASSUNTO_ID', '2')
+    monkeypatch.setenv('BILLING_AUTOCLOSE_ENABLED', 'true')
+    get_settings.cache_clear()
+
+    app.dependency_overrides[get_ixc_adapter] = lambda: _BillingFlowAdapter()
+    try:
+        response = client.post('/billing/cases/reconcile?limit=1000')
+    finally:
+        app.dependency_overrides.pop(get_ixc_adapter, None)
+        get_settings.cache_clear()
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload['closed'] >= 1
