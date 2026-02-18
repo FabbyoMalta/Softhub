@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     softhub_profile: bool = Field(default=False, alias='SOFTHUB_PROFILE')
     dashboard_cache_ttl_s: int = Field(default=60, alias='DASHBOARD_CACHE_TTL_S')
     frontend_dev_url: str = Field(default='http://localhost:5173', alias='FRONTEND_DEV_URL')
+    billing_case_seed_dev: bool = Field(default=False, alias='BILLING_CASE_SEED_DEV')
 
 
 @lru_cache

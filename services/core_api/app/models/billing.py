@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from datetime import date, datetime
+from decimal import Decimal
+
 from pydantic import BaseModel
 
 
@@ -39,3 +42,27 @@ class BillingOpenResponse(BaseModel):
 class BillingActionOut(BaseModel):
     action_key: str
     external_id: str
+
+
+class BillingCaseOut(BaseModel):
+    id: str
+    external_id: str
+    id_cliente: str
+    id_contrato: str | None = None
+    filial_id: str | None = None
+    due_date: date | None = None
+    amount_open: Decimal
+    open_days: int
+    payment_type: str | None = None
+    status_case: str
+    first_seen_at: datetime
+    last_seen_at: datetime
+    action_state: str
+    last_action_at: datetime | None = None
+
+
+class BillingCasesSummaryOut(BaseModel):
+    total_cases: int
+    total_amount_open: Decimal
+    oldest_due_date: date | None = None
+    by_filial: dict[str, int]
