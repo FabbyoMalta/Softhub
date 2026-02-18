@@ -39,6 +39,14 @@ CAPACITY_STATUS_CODES = ['AG', 'RAG', 'AS', 'DS', 'EX', 'F', 'A', 'AN', 'EN']
 logger = logging.getLogger(__name__)
 
 
+def _clients_to_map(rows: Any) -> dict[str, dict[str, Any]]:
+    if isinstance(rows, dict):
+        return rows
+    if isinstance(rows, list):
+        return {str(r.get('id') or r.get('id_cliente') or ''): r for r in rows if isinstance(r, dict) and (r.get('id') or r.get('id_cliente'))}
+    return {}
+
+
 def _load_subject_ids() -> tuple[set[str], set[str]]:
     settings = get_settings_payload()
     install_subject_ids = {
@@ -279,7 +287,7 @@ def fetch_dashboard_items(
 
     ids = sorted({str(r.get('id_cliente')) for r in rows if r.get('id_cliente')})
     with timer('dashboard.customer_lookup', logger, {'ids_count': len(ids)}):
-        clientes = adapter.list_clientes_by_ids(ids) if ids else {}
+        clientes = _clients_to_map(adapter.list_clientes_by_ids(ids)) if ids else {}
 
     return [
         normalize_row(r, clientes.get(str(r.get('id_cliente') or '')), install_subject_ids, maintenance_subject_ids)
@@ -424,7 +432,7 @@ def fetch_maintenance_items(
         rows = _sort_rows(rows, 'data_abertura', reverse=False)
 
     ids = sorted({str(r.get('id_cliente')) for r in rows if r.get('id_cliente')})
-    clientes = adapter.list_clientes_by_ids(ids) if ids else {}
+    clientes = _clients_to_map(adapter.list_clientes_by_ids(ids)) if ids else {}
     return [
         normalize_row(r, clientes.get(str(r.get('id_cliente') or '')), install_subject_ids, maintenance_subject_ids)
         for r in rows
