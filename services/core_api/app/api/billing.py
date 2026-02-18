@@ -8,9 +8,10 @@ from sqlalchemy import func
 
 from app.config import get_settings
 from app.db import BillingCase, SessionLocal
-from app.models.billing import BillingActionOut, BillingCasesSummaryOut, BillingCaseOut, BillingOpenResponse
+from app.models.billing import BillingActionOut, BillingCasesSummaryOut, BillingCaseOut, BillingOpenResponse, BillingSyncOut
 from app.services.adapters import get_ixc_adapter
 from app.services.billing import build_billing_open_response, list_billing_actions
+from app.services.billing_sync import sync_billing_cases
 from app.utils.cache import cache_get_json, cache_set_json
 
 router = APIRouter(prefix='/billing', tags=['billing'])
@@ -65,6 +66,25 @@ def get_billing_actions(limit: int = Query(default=200, ge=1, le=1000)):
     )
     return actions
 
+
+
+
+@router.post('/sync', response_model=BillingSyncOut)
+def post_billing_sync(
+    min_days: int = Query(default=20, ge=0),
+    due_from: date | None = Query(default=None),
+    due_to: date | None = Query(default=None),
+    filial_id: str | None = Query(default=None),
+    adapter=Depends(get_ixc_adapter),
+):
+    result = sync_billing_cases(
+        adapter=adapter,
+        min_days=min_days,
+        due_from=due_from,
+        due_to=due_to,
+        filial_id=filial_id,
+    )
+    return BillingSyncOut(synced=result.synced, upserted=result.upserted, duration_ms=result.duration_ms)
 
 @router.get('/cases', response_model=list[BillingCaseOut])
 def get_billing_cases(

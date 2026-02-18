@@ -66,3 +66,9 @@ class BillingCasesSummaryOut(BaseModel):
     total_amount_open: Decimal
     oldest_due_date: date | None = None
     by_filial: dict[str, int]
+
+
+class BillingSyncOut(BaseModel):
+    synced: int
+    upserted: int
+    duration_ms: float
