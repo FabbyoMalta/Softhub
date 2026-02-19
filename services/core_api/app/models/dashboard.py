@@ -48,6 +48,7 @@ class SummaryInstalacoes(BaseModel):
     finalizadas_periodo: int
     pendentes_periodo: int
     total_periodo: int
+    pendentes_instalacao_total: int = 0
 
 
 class SummaryManutencoes(BaseModel):
@@ -114,3 +115,23 @@ class AppSettings(BaseModel):
     subject_groups: SubjectGroups
     agenda_capacity: dict[str, dict[str, int]]
     filiais: dict[str, str]
+
+
+
+class InstallationPendingItem(BaseModel):
+    id: str
+    cliente: str | None = None
+    id_cliente: str | None = None
+    bairro_cidade: str | None = None
+    assunto_id: str | None = None
+    categoria: str = 'instalacao'
+    status: str | None = None
+    data_agendada: str
+    hora: str | None = None
+    dias_atraso: int
+    filial: str | None = None
+
+
+class InstallationsPendingResponse(BaseModel):
+    total: int
+    items: list[InstallationPendingItem]

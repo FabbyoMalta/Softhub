@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { SummaryPanelInstallations } from './SummaryPanelInstallations'
 import { SummaryPanelMaintenances } from './SummaryPanelMaintenances'
@@ -50,10 +51,13 @@ function TinySeriesPreview({ title, data }: { title: string; data: Array<{ date:
 }
 
 export function DashboardPage({ apiBase }: { apiBase: string }) {
-  const [startDate, setStartDate] = useState(toISODate(new Date()))
+  const navigate = useNavigate()
+  const today = toISODate(new Date())
+  const [startDate, setStartDate] = useState(today)
   const [days, setDays] = useState(7)
+  const [period, setPeriod] = useState<'today' | '7d' | '14d' | '30d'>('7d')
 
-  const { data, loading, error } = useDashboardSummary(apiBase, startDate, days)
+  const { data, loading, error } = useDashboardSummary(apiBase, startDate, days, period)
 
   const periodLabel = useMemo(() => {
     if (!data?.periodStart || !data?.periodEnd) return '-'
@@ -61,6 +65,16 @@ export function DashboardPage({ apiBase }: { apiBase: string }) {
   }, [data?.periodEnd, data?.periodStart])
 
   const trendPlaceholder = computeTrend(0, data?.totals.osPeriod ?? 0)
+
+  const onPeriodChange = (p: 'today' | '7d' | '14d' | '30d') => {
+    setPeriod(p)
+    if (p === 'today') {
+      setStartDate(today)
+      setDays(1)
+    } else {
+      setDays(Number(p.replace('d', '')))
+    }
+  }
 
   return (
     <section className="space-y-4">
@@ -71,16 +85,17 @@ export function DashboardPage({ apiBase }: { apiBase: string }) {
         </div>
         <div className="flex flex-wrap items-end gap-3">
           <label className="flex flex-col gap-1 text-sm text-slate-600">
-            Início
-            <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="rounded-xl border border-slate-300 px-3 py-2" />
+            Período
+            <select value={period} onChange={(e) => onPeriodChange(e.target.value as 'today' | '7d' | '14d' | '30d')} className="rounded-xl border border-slate-300 px-3 py-2">
+              <option value="today">Hoje</option>
+              <option value="7d">7 dias</option>
+              <option value="14d">14 dias</option>
+              <option value="30d">30 dias</option>
+            </select>
           </label>
           <label className="flex flex-col gap-1 text-sm text-slate-600">
-            Dias
-            <select value={days} onChange={(e) => setDays(Number(e.target.value))} className="rounded-xl border border-slate-300 px-3 py-2">
-              <option value={7}>7</option>
-              <option value={14}>14</option>
-              <option value={30}>30</option>
-            </select>
+            Início
+            <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="rounded-xl border border-slate-300 px-3 py-2" />
           </label>
           <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">{periodLabel}</span>
         </div>
@@ -97,13 +112,18 @@ export function DashboardPage({ apiBase }: { apiBase: string }) {
         <DashboardSkeleton />
       ) : (
         <>
-          <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
             <SummaryPanelInstallations days={days} data={data.installations} />
             <SummaryPanelMaintenances
               days={days}
               data={data.maintenances}
               totalOSPeriod={data.totals.osPeriod}
             />
+            <button className="rounded-2xl border border-amber-300 bg-amber-50 p-4 text-left shadow-sm" onClick={() => navigate('/agenda?open_pending=true')}>
+              <p className="text-sm font-semibold text-amber-800">OS pendentes</p>
+              <p className="text-3xl font-bold text-amber-900">{data.installations.pendingInstallationsTotal}</p>
+              <p className="text-xs text-amber-700">Instalações abertas com agendamento antes de hoje</p>
+            </button>
           </div>
 
           <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
