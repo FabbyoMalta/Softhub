@@ -120,58 +120,110 @@ function AgendaPage() {
   const today = toISODate(new Date())
   const { filters, setFilters } = useSavedFilters('agenda_week')
   const [selectedFilterId, setSelectedFilterId] = useState('')
-  const [selectedFilialId, setSelectedFilialId] = useState<'' | '1' | '2'>('')
-  const [currentFilter, setCurrentFilter] = useState<FilterDefinition>({})
+  const [currentFilter, setCurrentFilter] = useState<FilterDefinition>({ category: 'instalacao' })
   const [builderOpen, setBuilderOpen] = useState(false)
   const [editing, setEditing] = useState<SavedFilter | null>(null)
   const [agendaDays, setAgendaDays] = useState<AgendaDay[]>([])
   const [filialNames, setFilialNames] = useState<Record<'1' | '2', string>>({ '1': 'Grande Vitória', '2': 'João Neiva' })
   const [startDate, setStartDate] = useState(today)
   const [days, setDays] = useState(7)
+  const [period, setPeriod] = useState<'today' | '7d' | '14d' | '30d'>('7d')
   const [loading, setLoading] = useState(false)
+  const [selectedFilialId, setSelectedFilialId] = useState<'' | '1' | '2'>('')
+  const [pendingOpen, setPendingOpen] = useState(false)
+  const [pending, setPending] = useState<any[]>([])
+  const [pendingTotal, setPendingTotal] = useState(0)
+  const [pendingError, setPendingError] = useState<string | null>(null)
 
-  const load = async (filter?: FilterDefinition, filterId?: string, s = startDate, d = days, filial = selectedFilialId) => {
-    const base: Record<string, string> = { start: s, days: String(d) }
+  const loadPending = async (filial = selectedFilialId) => {
+    setPendingError(null)
+    const params = new URLSearchParams({ limit: '200' })
+    if (filial) params.set('filial_id', filial)
+    if (selectedFilterId) params.set('filter_id', selectedFilterId)
+    else if (Object.keys(currentFilter).length) params.set('filter_json', JSON.stringify(currentFilter))
+    const url = `${API}/dashboard/installations-pending?${params.toString()}`
+    console.info('[AgendaPage] pending URL', { url })
+    try {
+      const res = await fetch(url)
+      const text = await res.text()
+      if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}
+${text.slice(0, 300)}`)
+      const payload = JSON.parse(text)
+      setPending(payload.items || [])
+      setPendingTotal(payload.total || 0)
+    } catch (err: any) {
+      setPendingError(err?.message || 'Falha ao carregar pendentes')
+    }
+  }
+
+  const load = async (filter?: FilterDefinition, filterId?: string, s = startDate, d = days, filial = selectedFilialId, p = period) => {
+    const base: Record<string, string> = { start: s, days: String(d), period: p }
     if (filial) base.filial_id = filial
-    const params = filterId ? new URLSearchParams({ ...base, filter_id: filterId }) : new URLSearchParams({ ...base, filter_json: JSON.stringify(filter || currentFilter) })
+    if (filterId) base.filter_id = filterId
+    else base.filter_json = JSON.stringify(filter || currentFilter)
+
+    const params = new URLSearchParams(base)
     setLoading(true)
     try {
-      const payload = await fetch(`${API}/dashboard/agenda-week?${params}`).then((r) => r.json()) as AgendaWeekResponse
+      const url = `${API}/dashboard/agenda-week?${params}`
+      console.info('[AgendaPage] agenda URL', { url })
+      const payload = await fetch(url).then((r) => r.json()) as AgendaWeekResponse
       setAgendaDays(payload.days || [])
+
+      const settingsPayload = await fetch(`${API}/settings`).then((r) => r.json())
+      setFilialNames({
+        '1': String(settingsPayload?.filiais?.['1'] || 'Filial 1'),
+        '2': String(settingsPayload?.filiais?.['2'] || 'Filial 2'),
+      })
+      await loadPending(filial)
     } finally {
       setLoading(false)
     }
   }
 
-  useEffect(() => { load({}, '', today, 7, '') }, [])
-  useEffect(() => { fetch(`${API}/settings`).then((r) => r.json()).then((s: AppSettings) => setFilialNames(s.filiais || { '1': 'Filial 1', '2': 'Filial 2' })) }, [])
+  useEffect(() => {
+    const search = new URLSearchParams(window.location.search)
+    if (search.get('open_pending') === 'true') setPendingOpen(true)
+    load({ category: 'instalacao' }, '', today, 7, '', '7d')
+  }, [])
+
+  const setPeriodAndLoad = (p: 'today' | '7d' | '14d' | '30d') => {
+    setPeriod(p)
+    let d = days
+    let s = startDate
+    if (p === 'today') { d = 1; s = today }
+    else if (p === '7d') d = 7
+    else if (p === '14d') d = 14
+    else d = 30
+    setDays(d)
+    setStartDate(s)
+    load(undefined, selectedFilterId || undefined, s, d, selectedFilialId, p)
+  }
 
   const save = async (name: string, scope: FilterScope, definition_json: FilterDefinition) => {
-    try {
-      const f = await fetch(`${API}/filters`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, scope, definition_json }) }).then((r) => r.json()) as SavedFilter
-      setFilters((prev) => [f, ...prev])
-      toast.success('Filtro salvo com sucesso')
-    } catch {
-      toast.error('Falha ao salvar filtro')
-    }
+    const f = await fetch(`${API}/filters`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, scope, definition_json }) }).then((r) => r.json()) as SavedFilter
+    setFilters((prev) => [f, ...prev])
+    toast.success('Filtro salvo com sucesso')
   }
   const update = async (id: string, name: string, scope: FilterScope, definition_json: FilterDefinition) => {
-    try {
-      const u = await fetch(`${API}/filters/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, scope, definition_json }) }).then((r) => r.json()) as SavedFilter
-      setFilters((prev) => prev.map((f) => f.id === id ? u : f))
-      toast.success('Filtro atualizado com sucesso')
-    } catch {
-      toast.error('Falha ao atualizar filtro')
-    }
+    const u = await fetch(`${API}/filters/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, scope, definition_json }) }).then((r) => r.json()) as SavedFilter
+    setFilters((prev) => prev.map((f) => f.id === id ? u : f))
+    toast.success('Filtro atualizado com sucesso')
   }
 
   return <section>
-    <header className="topbar"><h2>Agenda técnica</h2><p>Operação por dia com capacidade</p></header>
+    <header className="topbar"><h2>Agenda</h2><div className="controls-row"><select className={inputBaseClass} value={selectedFilterId} onChange={(e) => { const id = e.target.value; setSelectedFilterId(id); const saved = filters.find((f) => f.id === id) || null; setEditing(saved); if (saved) load(undefined, id); else load(currentFilter) }}><option value="">Sem filtro salvo</option>{filters.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}</select><button className="btn" onClick={() => { setEditing(null); setBuilderOpen(true) }}><Plus size={14} /> Novo filtro</button>{selectedFilterId && <button className="btn" onClick={() => setBuilderOpen(true)}><Save size={14} /> Salvar/Editar</button>}</div></header>
+
     <ActionBar
       left={<div className="flex flex-wrap gap-2"><PillToggle active={selectedFilialId === ''} onClick={() => { setSelectedFilialId(''); load(undefined, selectedFilterId || undefined, startDate, days, '') }}>Todas</PillToggle><PillToggle active={selectedFilialId === '1'} onClick={() => { setSelectedFilialId('1'); load(undefined, selectedFilterId || undefined, startDate, days, '1') }}>F1 {filialNames['1']}</PillToggle><PillToggle active={selectedFilialId === '2'} onClick={() => { setSelectedFilialId('2'); load(undefined, selectedFilterId || undefined, startDate, days, '2') }}>F2 {filialNames['2']}</PillToggle></div>}
-      center={<div className="flex flex-wrap gap-2"><label>Início<input className={inputBaseClass} type="date" value={startDate} onChange={(e) => { const d = e.target.value; setStartDate(d); load(undefined, selectedFilterId || undefined, d, days) }} /></label><label>Dias<select className={inputBaseClass} value={days} onChange={(e) => { const d = Number(e.target.value); setDays(d); load(undefined, selectedFilterId || undefined, startDate, d) }}><option value={7}>7</option><option value={14}>14</option><option value={30}>30</option></select></label></div>}
-      right={<div className="flex flex-wrap items-end gap-2"><select className={inputBaseClass} value={selectedFilterId} onChange={(e) => { const id = e.target.value; setSelectedFilterId(id); const saved = filters.find((f) => f.id === id) || null; setEditing(saved); if (saved) { setCurrentFilter(saved.definition_json); load(undefined, id) } else load(currentFilter) }}><option value="">Filtro salvo</option>{filters.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}</select><button className="btn" onClick={() => { setEditing(null); setBuilderOpen(true) }}><Plus size={14} /> Novo filtro</button>{selectedFilterId && <button className="btn" onClick={() => setBuilderOpen(true)}><Save size={14} /> Salvar/Editar</button>}</div>}
+      center={<div className="flex flex-wrap gap-2"><label>Período<select className={inputBaseClass} value={period} onChange={(e) => setPeriodAndLoad(e.target.value as any)}><option value="today">Hoje</option><option value="7d">7 dias</option><option value="14d">14 dias</option><option value="30d">30 dias</option></select></label><label>Início<input className={inputBaseClass} type="date" value={startDate} onChange={(e) => { const d = e.target.value; setStartDate(d); load(undefined, selectedFilterId || undefined, d, days) }} /></label></div>}
+      right={<div className="flex flex-wrap gap-2"><button className="btn" onClick={() => { setPendingOpen((v) => !v); if (!pendingOpen) loadPending() }}>Pendentes {pendingTotal > 0 ? `(${pendingTotal})` : ''}</button></div>}
     />
+
+    {pendingError ? <div className="rounded-2xl border border-rose-200 bg-rose-50 p-3 text-rose-700 text-sm whitespace-pre-wrap">{pendingError}</div> : null}
+
+    {pendingOpen ? <div className="panel mb-3"><h3>Pendentes</h3><div className="grid gap-2">{pending.map((p:any) => <div key={p.id} className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm"><div className="font-semibold">{p.cliente} · {p.data_agendada} {p.hora || ''}</div><div>{p.bairro_cidade} · {p.dias_atraso} dias atraso</div></div>)}{pending.length===0?<div className="text-sm text-slate-500">Sem pendentes.</div>:null}</div></div> : null}
+
     <AgendaBoard days={agendaDays} startDate={startDate} totalDays={days} loading={loading} selectedFilialId={selectedFilialId} filialNames={filialNames} />
     <FilterBuilder open={builderOpen} value={currentFilter} editingFilter={editing} onClose={() => setBuilderOpen(false)} onApply={(f) => { setCurrentFilter(f); setSelectedFilterId(''); load(f) }} onSave={save} onUpdate={update} />
   </section>

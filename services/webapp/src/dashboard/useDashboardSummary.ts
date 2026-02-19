@@ -11,6 +11,7 @@ export type DashboardSummaryView = {
     totalPeriod: number
     finishedPeriod: number
     pendingPeriod: number
+    pendingInstallationsTotal: number
   }
   maintenances: {
     openedToday: number
@@ -69,6 +70,7 @@ const mapSummary = (raw: any): DashboardSummaryView => {
       totalPeriod: totalPeriodInstall,
       finishedPeriod: normalizedFinishedPeriod,
       pendingPeriod: normalizedPendingPeriod,
+      pendingInstallationsTotal: safeNum(installRaw?.pendentes_instalacao_total),
     },
     maintenances: {
       openedToday: safeNum(maintRaw?.abertas_hoje ?? maintRaw?.opened_today),
@@ -94,10 +96,10 @@ export function computeTrend(prev: number, curr: number): 'up' | 'down' | 'flat'
   return 'flat'
 }
 
-export function useDashboardSummary(apiBase: string, startDate: string, days: number): HookState {
+export function useDashboardSummary(apiBase: string, startDate: string, days: number, period: 'today' | '7d' | '14d' | '30d'): HookState {
   const [state, setState] = useState<HookState>({ data: null, loading: true, error: null })
 
-  const key = useMemo(() => `${startDate}:${days}`, [startDate, days])
+  const key = useMemo(() => `${startDate}:${days}:${period}`, [startDate, days, period])
 
   useEffect(() => {
     let isCancelled = false
@@ -115,7 +117,7 @@ export function useDashboardSummary(apiBase: string, startDate: string, days: nu
       }
 
       try {
-        const params = new URLSearchParams({ start: startDate, days: String(days) })
+        const params = new URLSearchParams({ start: startDate, days: String(days), period })
         const response = await fetch(`${apiBase}/dashboard/summary?${params.toString()}`, { signal: controller.signal })
         if (!response.ok) throw new Error('Não foi possível carregar os indicadores do dashboard.')
         const mapped = mapSummary(await response.json())
@@ -132,7 +134,7 @@ export function useDashboardSummary(apiBase: string, startDate: string, days: nu
       clearTimeout(timer)
       controller.abort()
     }
-  }, [apiBase, days, key, startDate])
+  }, [apiBase, days, key, startDate, period])
 
   return state
 }
