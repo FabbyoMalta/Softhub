@@ -54,6 +54,14 @@ const formatMoney = (raw: string | null) => {
   return Number.isFinite(value) ? moneyFmt.format(value) : '-'
 }
 
+async function parseApi<T>(res: Response): Promise<T> {
+  const text = await res.text()
+  if (!res.ok) {
+    throw new Error(`HTTP ${res.status} ${res.statusText}\n${text.slice(0, 500)}`)
+  }
+  return (text ? JSON.parse(text) : {}) as T
+}
+
 export function BillingPage({ apiBase }: { apiBase: string }) {
   const toast = useToast()
   const [payload, setPayload] = useState<BillingCasesPayload | null>(null)
