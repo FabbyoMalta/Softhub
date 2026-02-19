@@ -5,6 +5,7 @@ import { MetricCard } from './MetricCard'
 type InstallationsData = {
   scheduledToday: number
   finishedToday: number
+  pendingToday: number
   totalPeriod: number
   finishedPeriod: number
   pendingPeriod: number
@@ -25,9 +26,10 @@ export function SummaryPanelInstallations({ days, data }: { days: number; data: 
         <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700">Período: {days} dias</span>
       </div>
 
-      <div className="mb-4 grid grid-cols-1 gap-3 md:grid-cols-3">
-        <MetricCard title="Agendadas hoje" value={data.scheduledToday} live accent="blue" helper="Atualização contínua" />
+      <div className="mb-4 grid grid-cols-1 gap-3 md:grid-cols-4">
+        <MetricCard title="Agendadas hoje" value={data.scheduledToday} live accent="blue" helper="Previstas (abertas + finalizadas)" />
         <MetricCard title="Finalizadas hoje" value={data.finishedToday} live accent="blue" helper="Atualização contínua" />
+        <MetricCard title="Pendentes hoje" value={data.pendingToday} accent="amber" helper="Abertas com agendamento hoje" />
         <MetricCard title="Total período" value={data.totalPeriod} accent="blue" helper="Acumulado" />
       </div>
 

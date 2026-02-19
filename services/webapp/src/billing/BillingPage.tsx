@@ -1,27 +1,53 @@
-import React, { useEffect, useMemo, useState } from 'react'
-import type { BillingAction, BillingOpenItem, BillingOpenResponse } from '../types'
-
-const inputClass = 'rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100'
-
-type BillingFilters = {
-  onlyOver20: boolean
-  paymentType: string
-  seller: string
-  contractStatus: string
-  search: string
-}
-
-function SummaryCard({ title, value, helper }: { title: string; value: string | number; helper?: string }) {
-  return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-      <p className="text-sm text-slate-500">{title}</p>
-      <p className="text-2xl font-bold text-slate-900">{value}</p>
-      {helper ? <p className="text-xs text-slate-400">{helper}</p> : null}
-    </div>
-  )
-}
+import React, { useEffect, useState } from 'react'
+import { useToast } from '../components/Toast'
 
 const moneyFmt = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' })
+
+type BillingTitle = {
+  external_id: string
+  due_date: string | null
+  issue_date: string | null
+  amount_open: string
+  amount_total: string | null
+  payment_type: string | null
+  open_days: number
+  status: string | null
+  id_cobranca: string | null
+  linha_digitavel: string | null
+}
+
+type BillingCaseGroup = {
+  case_key: string
+  id_cliente: string
+  id_contrato: string | null
+  cliente_nome: string | null
+  qtd_titulos: number
+  total_aberto: string
+  oldest_due_date: string | null
+  newest_due_date: string | null
+  max_open_days: number
+  titles: BillingTitle[]
+}
+
+type BillingCasesPayload = {
+  summary: {
+    cases_total: number
+    cases_20p: number
+    titles_total: number
+    amount_open_total: string
+    oldest_due_date: string | null
+    generated_at: string
+  }
+  cases: BillingCaseGroup[]
+}
+
+async function parseApi<T>(res: Response): Promise<T> {
+  const text = await res.text()
+  if (!res.ok) {
+    throw new Error(`HTTP ${res.status} ${res.statusText}\n${text.slice(0, 500)}`)
+  }
+  return (text ? JSON.parse(text) : {}) as T
+}
 
 const formatMoney = (raw: string | null) => {
   const value = Number(raw ?? '0')
@@ -29,195 +55,144 @@ const formatMoney = (raw: string | null) => {
 }
 
 export function BillingPage({ apiBase }: { apiBase: string }) {
-  const [data, setData] = useState<BillingOpenResponse | null>(null)
-  const [actions, setActions] = useState<BillingAction[]>([])
-  const [loading, setLoading] = useState(true)
+  const toast = useToast()
+  const [payload, setPayload] = useState<BillingCasesPayload | null>(null)
+  const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [filters, setFilters] = useState<BillingFilters>({
-    onlyOver20: false,
-    paymentType: '',
-    seller: '',
-    contractStatus: '',
-    search: '',
-  })
+  const [only20p, setOnly20p] = useState(true)
+  const [groupBy, setGroupBy] = useState<'contract' | 'client'>('contract')
+  const [minDueDate, setMinDueDate] = useState('')
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({})
+
+  const load = async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const query = new URLSearchParams({
+        only_20p: String(only20p),
+        group_by: groupBy,
+        limit: '500',
+      })
+      if (minDueDate) query.set('min_due_date', minDueDate)
+      const url = `${apiBase}/billing/cases?${query.toString()}`
+      console.info('[BillingPage] fetch billing cases', { url })
+      const res = await fetch(url)
+      const data = await parseApi<BillingCasesPayload>(res)
+      setPayload(data)
+      toast.success(`Carregado: ${data.summary.cases_total} casos`)
+    } catch (err: any) {
+      setError(err?.message || 'Erro ao carregar billing cases')
+    } finally {
+      setLoading(false)
+    }
+  }
 
   useEffect(() => {
-    let cancelled = false
-    const run = async () => {
-      setLoading(true)
-      setError(null)
-      const openUrl = `${apiBase}/billing/open`
-      const actionsUrl = `${apiBase}/billing/actions?limit=100`
-      console.info('[BillingPage] loading data', { openUrl, actionsUrl })
-      try {
-        const [openRes, actionsRes] = await Promise.all([
-          fetch(openUrl),
-          fetch(actionsUrl),
-        ])
-        if (!openRes.ok) {
-          const body = await openRes.text()
-          throw new Error(`Falha ao carregar contas em aberto (${openRes.status} ${openRes.statusText})\n${body.slice(0, 300)}`)
-        }
+    load()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
-        const openJson = (await openRes.json()) as BillingOpenResponse
-        let actionsJson: BillingAction[] = []
-        if (actionsRes.ok) {
-          actionsJson = (await actionsRes.json()) as BillingAction[]
-        } else {
-          const body = await actionsRes.text()
-          throw new Error(`Falha ao carregar ações de billing (${actionsRes.status} ${actionsRes.statusText})\n${body.slice(0, 300)}`)
-        }
-
-        if (!cancelled) {
-          setData(openJson)
-          setActions(actionsJson)
-        }
-      } catch (err: any) {
-        if (!cancelled) setError(err?.message || 'Erro inesperado ao carregar billing')
-      } finally {
-        if (!cancelled) setLoading(false)
-      }
-    }
-    run()
-    return () => {
-      cancelled = true
-    }
-  }, [apiBase])
-
-  const paymentTypes = useMemo(
-    () => Array.from(new Set((data?.items || []).map((item) => item.payment_type || '').filter(Boolean))).sort(),
-    [data?.items],
-  )
-  const sellers = useMemo(
-    () => Array.from(new Set((data?.items || []).map((item) => item.contract?.id_vendedor || '').filter(Boolean))).sort(),
-    [data?.items],
-  )
-  const contractStatuses = useMemo(
-    () => Array.from(new Set((data?.items || []).map((item) => item.contract?.status || '').filter(Boolean))).sort(),
-    [data?.items],
-  )
-
-  const filtered = useMemo(() => {
-    const term = filters.search.trim().toLowerCase()
-    return (data?.items || []).filter((item: BillingOpenItem) => {
-      if (filters.onlyOver20 && item.open_days < 20) return false
-      if (filters.paymentType && (item.payment_type || '') !== filters.paymentType) return false
-      if (filters.seller && (item.contract?.id_vendedor || '') !== filters.seller) return false
-      if (filters.contractStatus && (item.contract?.status || '') !== filters.contractStatus) return false
-      if (!term) return true
-      const hay = `${item.id_cliente || ''} ${item.id_contrato || ''}`.toLowerCase()
-      return hay.includes(term)
-    })
-  }, [data?.items, filters])
+  const rows = payload?.cases || []
+  const summary = payload?.summary
 
   return (
     <section className="space-y-4">
       <header className="topbar rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-        <div>
-          <h2 className="text-2xl font-bold text-slate-900">Billing</h2>
-          <p className="text-sm text-slate-500">Contas a receber abertas + marcação automática de 20 dias</p>
-        </div>
+        <h2 className="text-2xl font-bold text-slate-900">Billing 2.0</h2>
       </header>
 
-      {loading ? <div className="rounded-2xl border border-slate-200 bg-white p-6 text-slate-500">Carregando billing...</div> : null}
-      {error ? (
-        <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-rose-700">
-          <p className="font-semibold">Erro ao carregar billing</p>
-          <pre className="mt-2 whitespace-pre-wrap text-xs">{error}</pre>
-        </div>
+      {error ? <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-rose-700 text-sm whitespace-pre-wrap">{error}</div> : null}
+
+      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm flex flex-wrap items-center gap-3 text-sm">
+        <label className="flex items-center gap-2"><input type="checkbox" checked={only20p} onChange={(e) => setOnly20p(e.target.checked)} />Somente 20+ dias</label>
+        <label className="flex items-center gap-2">Agrupar por:
+          <select className="rounded border px-2 py-1" value={groupBy} onChange={(e) => setGroupBy(e.target.value as 'contract' | 'client')}>
+            <option value="contract">Contrato (padrão)</option>
+            <option value="client">Cliente</option>
+          </select>
+        </label>
+        <label className="flex items-center gap-2">Vencimento a partir de:
+          <input className="rounded border px-2 py-1" type="date" value={minDueDate} onChange={(e) => setMinDueDate(e.target.value)} />
+        </label>
+        <button className="btn" onClick={load}>Recarregar</button>
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><p className="text-xs text-slate-500">Casos totais</p><p className="text-2xl font-bold">{summary?.cases_total ?? 0}</p></div>
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><p className="text-xs text-slate-500">Casos 20+</p><p className="text-2xl font-bold">{summary?.cases_20p ?? 0}</p></div>
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><p className="text-xs text-slate-500">Valor aberto</p><p className="text-2xl font-bold">{formatMoney(summary?.amount_open_total ?? '0')}</p></div>
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><p className="text-xs text-slate-500">Vencimento mais antigo</p><p className="text-2xl font-bold">{summary?.oldest_due_date ?? '-'}</p></div>
+      </div>
+
+      {loading ? <div className="rounded-2xl border border-slate-200 bg-white p-6 text-slate-500">Carregando...</div> : null}
+
+      {!loading && rows.length === 0 ? (
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 text-slate-600 text-sm">Sem casos para o filtro atual.</div>
       ) : null}
 
-      {!loading && data ? (
-        <>
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-            <SummaryCard title="Total em aberto" value={data.summary.total_open} />
-            <SummaryCard title=">= 20 dias" value={data.summary.over_20_days} helper="Critério de ação" />
-            <SummaryCard title="Vencimento mais antigo" value={data.summary.oldest_due_date || '-'} />
-          </div>
-
-          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-5">
-              <label className="flex items-center gap-2 text-sm text-slate-700">
-                <input type="checkbox" checked={filters.onlyOver20} onChange={(e) => setFilters((f) => ({ ...f, onlyOver20: e.target.checked }))} />
-                Somente 20+ dias
-              </label>
-              <select className={inputClass} value={filters.paymentType} onChange={(e) => setFilters((f) => ({ ...f, paymentType: e.target.value }))}>
-                <option value="">Tipo de recebimento</option>
-                {paymentTypes.map((type) => <option key={type} value={type}>{type}</option>)}
-              </select>
-              <select className={inputClass} value={filters.seller} onChange={(e) => setFilters((f) => ({ ...f, seller: e.target.value }))}>
-                <option value="">Vendedor</option>
-                {sellers.map((seller) => <option key={seller} value={seller}>{seller}</option>)}
-              </select>
-              <select className={inputClass} value={filters.contractStatus} onChange={(e) => setFilters((f) => ({ ...f, contractStatus: e.target.value }))}>
-                <option value="">Status contrato</option>
-                {contractStatuses.map((status) => <option key={status} value={status}>{status}</option>)}
-              </select>
-              <input className={inputClass} placeholder="Buscar cliente/contrato" value={filters.search} onChange={(e) => setFilters((f) => ({ ...f, search: e.target.value }))} />
-            </div>
-          </div>
-
-          <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
-            <table className="min-w-full text-sm">
-              <thead className="bg-slate-50 text-left text-slate-600">
-                <tr>
-                  <th className="px-3 py-2">External ID</th>
-                  <th className="px-3 py-2">Cliente</th>
-                  <th className="px-3 py-2">Contrato</th>
-                  <th className="px-3 py-2">Venc.</th>
-                  <th className="px-3 py-2">Dias</th>
-                  <th className="px-3 py-2">Aberto/Total</th>
-                  <th className="px-3 py-2">Pagamento</th>
-                  <th className="px-3 py-2">Contrato (status)</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map((item) => (
-                  <tr key={`${item.external_id}-${item.id_contrato}`} className="border-t border-slate-100">
-                    <td className="px-3 py-2">{item.external_id || '-'}</td>
-                    <td className="px-3 py-2">{item.id_cliente || '-'}</td>
+      {!loading && rows.length > 0 ? (
+        <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <table className="min-w-full text-sm">
+            <thead className="bg-slate-50 text-left text-slate-600">
+              <tr>
+                <th className="px-3 py-2"></th>
+                <th className="px-3 py-2">Cliente</th>
+                <th className="px-3 py-2">Contrato</th>
+                <th className="px-3 py-2">Qtd títulos</th>
+                <th className="px-3 py-2">Total aberto</th>
+                <th className="px-3 py-2">Faixa vencimento</th>
+                <th className="px-3 py-2">Maior atraso</th>
+                <th className="px-3 py-2">Ticket status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((item) => (
+                <React.Fragment key={item.case_key}>
+                  <tr className="border-t border-slate-100">
+                    <td className="px-3 py-2"><button className="btn" onClick={() => setExpanded((prev) => ({ ...prev, [item.case_key]: !prev[item.case_key] }))}>{expanded[item.case_key] ? '▾' : '▸'}</button></td>
+                    <td className="px-3 py-2">{item.cliente_nome || item.id_cliente}</td>
                     <td className="px-3 py-2">{item.id_contrato || '-'}</td>
-                    <td className="px-3 py-2">{item.due_date || '-'}</td>
-                    <td className="px-3 py-2">
-                      <span className={`rounded-full px-2 py-1 text-xs font-semibold ${item.open_days >= 20 ? 'bg-rose-100 text-rose-700' : 'bg-slate-100 text-slate-700'}`}>
-                        {item.open_days}
-                      </span>
-                    </td>
-                    <td className="px-3 py-2">{formatMoney(item.amount_open)} / {formatMoney(item.amount_total)}</td>
-                    <td className="px-3 py-2">{item.payment_type || '-'}</td>
-                    <td className="px-3 py-2">
-                      <div className="flex flex-col text-xs">
-                        <span>{item.contract?.status || '-'}</span>
-                        <span className="text-slate-500">Internet: {item.contract?.status_internet || '-'}</span>
-                        <span className="text-slate-500">Financeiro: {item.contract?.situacao_financeira || '-'}</span>
-                        <span className="text-slate-500">Vendedor: {item.contract?.id_vendedor || '-'}</span>
-                        <span className="text-slate-500">Plano: {item.contract?.plano_nome || '-'}</span>
-                      </div>
-                    </td>
+                    <td className="px-3 py-2">{item.qtd_titulos}</td>
+                    <td className="px-3 py-2">{formatMoney(item.total_aberto)}</td>
+                    <td className="px-3 py-2">{item.oldest_due_date || '-'} → {item.newest_due_date || '-'}</td>
+                    <td className="px-3 py-2">{item.max_open_days}</td>
+                    <td className="px-3 py-2">-</td>
                   </tr>
-                ))}
-                {filtered.length === 0 ? (
-                  <tr>
-                    <td colSpan={8} className="px-3 py-6 text-center text-slate-500">Sem itens</td>
-                  </tr>
-                ) : null}
-              </tbody>
-            </table>
-          </div>
-
-          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-            <h3 className="mb-2 text-sm font-semibold text-slate-800">Ações disparadas</h3>
-            {actions.length === 0 ? (
-              <p className="text-sm text-slate-500">Nenhuma ação registrada.</p>
-            ) : (
-              <ul className="list-disc space-y-1 pl-5 text-sm text-slate-700">
-                {actions.slice(0, 10).map((action) => (
-                  <li key={action.action_key}>{action.action_key} · external_id {action.external_id}</li>
-                ))}
-              </ul>
-            )}
-          </div>
-        </>
+                  {expanded[item.case_key] ? (
+                    <tr>
+                      <td colSpan={8} className="px-3 py-2 bg-slate-50">
+                        <table className="min-w-full text-xs">
+                          <thead>
+                            <tr className="text-slate-500">
+                              <th className="px-2 py-1 text-left">ID título</th>
+                              <th className="px-2 py-1 text-left">Emissão</th>
+                              <th className="px-2 py-1 text-left">Vencimento</th>
+                              <th className="px-2 py-1 text-left">Valor aberto</th>
+                              <th className="px-2 py-1 text-left">Dias em aberto</th>
+                              <th className="px-2 py-1 text-left">Tipo</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {item.titles.map((t) => (
+                              <tr key={t.external_id} className="border-t border-slate-200">
+                                <td className="px-2 py-1">{t.external_id}</td>
+                                <td className="px-2 py-1">{t.issue_date || '-'}</td>
+                                <td className="px-2 py-1">{t.due_date || '-'}</td>
+                                <td className="px-2 py-1">{formatMoney(t.amount_open)}</td>
+                                <td className="px-2 py-1">{t.open_days}</td>
+                                <td className="px-2 py-1">{t.payment_type || '-'}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </td>
+                    </tr>
+                  ) : null}
+                </React.Fragment>
+              ))}
+            </tbody>
+          </table>
+        </div>
       ) : null}
     </section>
   )
