@@ -11,6 +11,7 @@ from app.db import BillingCase, SessionLocal
 from app.models.billing import (
     BillingActionOut,
     BillingBatchFilters,
+    BillingCasesGroupedResponseOut,
     BillingCasesSummaryOut,
     BillingCaseOut,
     BillingEnrichOut,
@@ -25,6 +26,7 @@ from app.models.billing import (
 )
 from app.services.adapters import get_ixc_adapter
 from app.services.billing import build_billing_open_response, list_billing_actions
+from app.services.billing_cases import build_grouped_billing_cases
 from app.services.billing_enrich import enrich_billing_cases
 from app.services.billing_sync import sync_billing_cases
 from app.services.billing_tickets import (
@@ -187,8 +189,27 @@ def get_ticket_config_check():
     return {'ok': not missing, 'missing': missing, 'enabled': s.billing_ticket_enable, 'autoclose_enabled': s.billing_autoclose_enabled}
 
 
-@router.get('/cases', response_model=list[BillingCaseOut])
+@router.get('/cases', response_model=BillingCasesGroupedResponseOut)
 def get_billing_cases(
+    only_20p: bool = Query(default=True),
+    group_by: str = Query(default='contract', pattern='^(contract|client)$'),
+    limit: int = Query(default=500, ge=1, le=2000),
+    min_due_date: date | None = Query(default=None),
+    max_due_date: date | None = Query(default=None),
+    adapter=Depends(get_ixc_adapter),
+):
+    return build_grouped_billing_cases(
+        adapter=adapter,
+        only_20p=only_20p,
+        group_by=group_by,
+        limit=limit,
+        min_due_date=min_due_date,
+        max_due_date=max_due_date,
+    )
+
+
+@router.get('/cases/db', response_model=list[BillingCaseOut])
+def get_billing_cases_db(
     status: str = Query(default='open'),
     filial_id: str | None = Query(default=None),
     min_days: int | None = Query(default=None, ge=0),

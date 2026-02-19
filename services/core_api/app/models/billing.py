@@ -131,3 +131,43 @@ class BillingReconcileOut(BaseModel):
     closed: int
     would_close: int
     errors: int
+
+
+class BillingCaseTitleOut(BaseModel):
+    external_id: str
+    due_date: str | None = None
+    issue_date: str | None = None
+    amount_open: str
+    amount_total: str | None = None
+    payment_type: str | None = None
+    open_days: int
+    status: str | None = None
+    id_cobranca: str | None = None
+    linha_digitavel: str | None = None
+
+
+class BillingCaseGroupOut(BaseModel):
+    case_key: str
+    id_cliente: str
+    id_contrato: str | None = None
+    cliente_nome: str | None = None
+    qtd_titulos: int
+    total_aberto: str
+    oldest_due_date: str | None = None
+    newest_due_date: str | None = None
+    max_open_days: int
+    titles: list[BillingCaseTitleOut]
+
+
+class BillingCasesGroupedSummaryOut(BaseModel):
+    cases_total: int
+    cases_20p: int
+    titles_total: int
+    amount_open_total: str
+    oldest_due_date: str | None = None
+    generated_at: str
+
+
+class BillingCasesGroupedResponseOut(BaseModel):
+    summary: BillingCasesGroupedSummaryOut
+    cases: list[BillingCaseGroupOut]

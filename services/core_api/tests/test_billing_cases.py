@@ -181,7 +181,7 @@ def _seed_cases() -> None:
 def test_get_billing_cases_returns_open_items():
     _seed_cases()
 
-    response = TestClient(app).get('/billing/cases')
+    response = TestClient(app).get('/billing/cases/db')
 
     assert response.status_code == 200
     payload = response.json()
@@ -192,7 +192,7 @@ def test_get_billing_cases_returns_open_items():
 def test_get_billing_cases_filters_by_status_and_min_days():
     _seed_cases()
 
-    response = TestClient(app).get('/billing/cases?status=OPEN&min_days=20')
+    response = TestClient(app).get('/billing/cases/db?status=OPEN&min_days=20')
 
     assert response.status_code == 200
     payload = response.json()
@@ -203,7 +203,7 @@ def test_get_billing_cases_summary_matches_listing_count():
     _seed_cases()
     client = TestClient(app)
 
-    listing = client.get('/billing/cases?status=OPEN&min_days=20')
+    listing = client.get('/billing/cases/db?status=OPEN&min_days=20')
     summary = client.get('/billing/cases/summary?status=OPEN&min_days=20')
 
     assert listing.status_code == 200
@@ -231,7 +231,7 @@ def test_sync_and_enrich_and_ticket_flow(monkeypatch):
         assert enrich_response.status_code == 200
         assert enrich_response.json()['updated'] >= 1
 
-        cases = client.get('/billing/cases?status=OPEN&min_days=20').json()
+        cases = client.get('/billing/cases/db?status=OPEN&min_days=20').json()
         synced = next(item for item in cases if item['external_id'] == 'SYNC-30D')
         assert synced['contract_json'] is not None
         assert synced['client_json'] is not None
@@ -277,7 +277,7 @@ def test_reconcile_ready_to_close_when_disabled(monkeypatch):
     assert payload['closed'] == 0
     assert payload['would_close'] >= 1
 
-    cases = client.get('/billing/cases?status=OPEN').json()
+    cases = client.get('/billing/cases/db?status=OPEN').json()
     paid_case = next(item for item in cases if item['external_id'] == 'SYNC-PAID')
     assert paid_case['action_state'] == 'READY_TO_CLOSE'
 
@@ -314,3 +314,53 @@ def test_reconcile_closes_when_enabled(monkeypatch):
     assert response.status_code == 200
     payload = response.json()
     assert payload['closed'] >= 1
+
+
+
+class _GroupedAdapter:
+    def list_contas_receber_atrasadas(self, min_days: int = 20, due_from=None, due_to=None, filial_id=None):
+        return [
+            {'id': 'T1', 'id_cliente': '100', 'id_contrato': '2', 'id_contrato_avulso': '0', 'data_vencimento': '2024-01-10', 'data_emissao': '2023-12-10', 'valor_aberto': '100', 'valor': '100', 'tipo_recebimento': 'PIX', 'status': 'A'},
+            {'id': 'T2', 'id_cliente': '100', 'id_contrato': '0', 'id_contrato_avulso': '3', 'data_vencimento': '2024-01-05', 'data_emissao': '2023-12-05', 'valor_aberto': '50', 'valor': '50', 'tipo_recebimento': 'BOL', 'status': 'A'},
+            {'id': 'T3', 'id_cliente': '100', 'id_contrato': '2', 'id_contrato_avulso': '0', 'data_vencimento': '2024-01-01', 'data_emissao': '2023-12-01', 'valor_aberto': '30', 'valor': '30', 'tipo_recebimento': 'PIX', 'status': 'A'},
+        ]
+
+    def list_contas_receber_para_sync(self, due_from, only_open=True, filial_id=None, rp=500, limit_pages=5):
+        return self.list_contas_receber_atrasadas()
+
+    def list_clientes_by_ids(self, ids):
+        return [{'id': i, 'nome': f'Cliente {i}'} for i in ids]
+
+
+def test_grouped_cases_by_contract():
+    client = TestClient(app)
+    app.dependency_overrides[get_ixc_adapter] = lambda: _GroupedAdapter()
+    try:
+        response = client.get('/billing/cases?only_20p=true&group_by=contract&limit=500')
+    finally:
+        app.dependency_overrides.pop(get_ixc_adapter, None)
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload['summary']['cases_total'] == 2
+    keys = {c['case_key'] for c in payload['cases']}
+    assert 'cliente:100|contrato:2' in keys
+    assert 'cliente:100|contrato:3' in keys
+    c2 = next(c for c in payload['cases'] if c['id_contrato'] == '2')
+    assert [t['external_id'] for t in c2['titles']] == ['T3', 'T1']
+
+
+def test_grouped_cases_by_client():
+    client = TestClient(app)
+    app.dependency_overrides[get_ixc_adapter] = lambda: _GroupedAdapter()
+    try:
+        response = client.get('/billing/cases?only_20p=true&group_by=client&limit=500')
+    finally:
+        app.dependency_overrides.pop(get_ixc_adapter, None)
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload['summary']['cases_total'] == 1
+    case = payload['cases'][0]
+    assert case['id_cliente'] == '100'
+    assert case['qtd_titulos'] == 3
