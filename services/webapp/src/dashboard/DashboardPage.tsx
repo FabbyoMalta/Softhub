@@ -61,6 +61,7 @@ export function DashboardPage({ apiBase }: { apiBase: string }) {
 
   const periodLabel = useMemo(() => {
     if (!data?.periodStart || !data?.periodEnd) return '-'
+    if (period === 'today') return 'Hoje'
     return `${dateFormatter.format(parseISODate(data.periodStart))} até ${dateFormatter.format(parseISODate(data.periodEnd))}`
   }, [data?.periodEnd, data?.periodStart])
 
@@ -112,6 +113,20 @@ export function DashboardPage({ apiBase }: { apiBase: string }) {
         <DashboardSkeleton />
       ) : (
         <>
+          <section className="rounded-2xl border border-amber-200 bg-amber-50/70 p-4 shadow-sm">
+            <div className="mb-3 flex items-center justify-between">
+              <h3 className="text-base font-semibold text-amber-900">Situação do Dia</h3>
+              <span className="text-xs text-amber-800">{data.today.date}</span>
+            </div>
+            <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
+              <div className="rounded-xl bg-white p-3"><p className="text-xs text-slate-500">Previstas hoje</p><p className="text-2xl font-bold text-slate-900">{data.today.installs.scheduledTotal}</p></div>
+              <div className="rounded-xl bg-white p-3"><p className="text-xs text-slate-500">Concluídas hoje</p><p className="text-2xl font-bold text-slate-900">{data.today.installs.completedToday}</p></div>
+              <div className="rounded-xl bg-white p-3"><p className="text-xs text-slate-500">Pendentes hoje</p><p className="text-2xl font-bold text-slate-900">{data.today.installs.pendingToday}</p></div>
+              <div className="rounded-xl bg-white p-3"><p className="text-xs text-slate-500">Atrasadas total</p><p className="text-2xl font-bold text-slate-900">{data.today.installs.overdueTotal}</p></div>
+              <div className="rounded-xl bg-white p-3"><p className="text-xs text-slate-500">Cumprimento</p><p className="text-2xl font-bold text-slate-900">{Math.round((data.today.installs.completionRate || 0) * 100)}%</p></div>
+            </div>
+          </section>
+
           <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
             <SummaryPanelInstallations days={days} data={data.installations} />
             <SummaryPanelMaintenances

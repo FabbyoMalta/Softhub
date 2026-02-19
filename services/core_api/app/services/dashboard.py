@@ -580,33 +580,48 @@ def compose_dashboard_summary(
     definition_json: dict[str, Any] | None,
     install_rows: list[dict[str, Any]],
     maint_period_rows: list[dict[str, Any]],
-    maint_open_rows: list[dict[str, Any]],
     maint_done_rows: list[dict[str, Any]],
     maint_backlog_rows: list[dict[str, Any]],
     maint_opened_today_rows: list[dict[str, Any]],
-    install_scheduled_today_rows: list[dict[str, Any]],
-    install_done_today_rows: list[dict[str, Any]],
     maint_done_today_rows: list[dict[str, Any]],
-    install_pending_rows: list[dict[str, Any]],
+    install_overdue_rows: list[dict[str, Any]],
 ) -> dict[str, Any]:
     date_end = date_start + timedelta(days=total_days - 1)
     install_rows = _status_filtered(install_rows, definition_json)
     maint_period_rows = _status_filtered(maint_period_rows, definition_json)
-    maint_open_rows = _status_filtered(maint_open_rows, definition_json)
     maint_done_rows = _status_filtered(maint_done_rows, definition_json)
 
-    finalizadas_periodo = sum(1 for row in install_rows if str(row.get('status') or '') == 'F')
+    scheduled_total = 0
+    completed_today = 0
+    pending_today = 0
+    for row in install_rows:
+        status = str(row.get('status') or '')
+        scheduled_dt = _parse_dt(row.get('data_agenda') or row.get('data_reservada'))
+        closed_dt = _parse_dt(row.get('data_fechamento'))
+
+        if scheduled_dt and scheduled_dt.date() == today_date:
+            scheduled_total += 1
+            if _is_open_installation_status(status):
+                pending_today += 1
+        if closed_dt and closed_dt.date() == today_date and _is_done_status(status):
+            completed_today += 1
+
+    overdue_total = len(install_overdue_rows)
+    completion_rate = 0.0 if scheduled_total <= 0 else round(completed_today / scheduled_total, 4)
+
+    finalizadas_periodo = sum(1 for row in install_rows if _is_done_status(str(row.get('status') or '')))
     pendentes_periodo = max(0, len(install_rows) - finalizadas_periodo)
 
     return {
         'period': {'start': date_start.strftime('%Y-%m-%d'), 'end': date_end.strftime('%Y-%m-%d')},
         'instalacoes': {
-            'agendadas_hoje': len(install_scheduled_today_rows),
-            'finalizadas_hoje': len(install_done_today_rows),
+            'agendadas_hoje': scheduled_total,
+            'finalizadas_hoje': completed_today,
+            'pendentes_hoje': pending_today,
             'finalizadas_periodo': finalizadas_periodo,
             'pendentes_periodo': pendentes_periodo,
             'total_periodo': len(install_rows),
-            'pendentes_instalacao_total': len(install_pending_rows),
+            'pendentes_instalacao_total': overdue_total,
         },
         'manutencoes': {
             'abertas_total': len(maint_backlog_rows),
@@ -614,6 +629,20 @@ def compose_dashboard_summary(
             'finalizadas_hoje': len(maint_done_today_rows),
             'resolvidas_periodo': len(maint_done_rows),
             'total_periodo': len(maint_period_rows),
+        },
+        'today': {
+            'date': today_date.strftime('%Y-%m-%d'),
+            'installs': {
+                'scheduled_total': scheduled_total,
+                'completed_today': completed_today,
+                'pending_today': pending_today,
+                'overdue_total': overdue_total,
+                'completion_rate': completion_rate,
+            },
+            'maintenances': {
+                'opened_today': len(maint_opened_today_rows),
+                'closed_today': len(maint_done_today_rows),
+            },
         },
         'installations_scheduled_by_day': _count_by_day(install_rows, 'data_agenda', date_start, total_days),
         'maint_opened_by_day': _count_by_day(maint_period_rows, 'data_abertura', date_start, total_days),
@@ -658,14 +687,11 @@ def build_dashboard_summary(
 
         install_rows = fetch_install_period_rows(adapter, date_start, date_end, install_subject_ids, filial_id)
         maint_period_rows = fetch_maint_period_rows(adapter, date_start, date_end, maintenance_subject_ids, filial_id)
-        maint_open_rows = fetch_maint_open_rows(adapter, date_start, date_end, maintenance_subject_ids, filial_id)
         maint_done_rows = fetch_maint_done_rows(adapter, date_start, date_end, maintenance_subject_ids, filial_id)
         maint_backlog_rows = fetch_maint_backlog_rows(adapter, maintenance_subject_ids, filial_id)
         maint_opened_today_rows = fetch_maint_opened_today_rows(adapter, today_date, maintenance_subject_ids, filial_id)
-        install_scheduled_today_rows = fetch_install_scheduled_today_rows(adapter, today_date, install_subject_ids, filial_id)
-        install_done_today_rows = fetch_install_done_today_rows(adapter, today_date, install_subject_ids, filial_id)
         maint_done_today_rows = fetch_maint_done_today_rows(adapter, today_date, maintenance_subject_ids, filial_id)
-        install_pending_rows = fetch_installations_pending_rows(adapter, today_date, install_subject_ids, filial_id)
+        install_overdue_rows = fetch_installations_pending_rows(adapter, today_date, install_subject_ids, filial_id)
 
         return compose_dashboard_summary(
             date_start,
@@ -674,20 +700,21 @@ def build_dashboard_summary(
             definition_json,
             install_rows,
             maint_period_rows,
-            maint_open_rows,
             maint_done_rows,
             maint_backlog_rows,
             maint_opened_today_rows,
-            install_scheduled_today_rows,
-            install_done_today_rows,
             maint_done_today_rows,
-            install_pending_rows,
+            install_overdue_rows,
         )
 
 
 def _is_open_installation_status(status: str) -> bool:
     s = (status or '').strip().upper()
-    return s not in {'F', 'C', 'CANCELADA', 'CAN', 'EX'}
+    return s not in {'F', 'C', 'CANCELADA', 'CAN'}
+
+
+def _is_done_status(status: str) -> bool:
+    return (status or '').strip().upper() == 'F'
 
 
 def fetch_installations_pending_rows(

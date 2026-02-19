@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 from datetime import timedelta
+from time import perf_counter
 
 import anyio
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
@@ -19,15 +20,13 @@ from app.services.dashboard import (
     fetch_maint_done_rows,
     fetch_maint_done_today_rows,
     fetch_maint_backlog_rows,
-    fetch_maint_open_rows,
     fetch_maint_opened_today_rows,
     fetch_maint_period_rows,
-    fetch_install_done_today_rows,
     fetch_maintenance_items,
-    fetch_install_scheduled_today_rows,
     maintenances_range,
     _resolve_today,
     build_installations_pending_response,
+    fetch_installations_pending_rows,
     resolve_period,
 )
 from app.services.filters import get_saved_filter_definition
@@ -112,39 +111,52 @@ async def get_summary(
         total_days = max(1, min(days, 31))
         date_end = date_start + timedelta(days=total_days - 1)
 
-        results: dict[str, list[dict]] = {}
+        t0 = perf_counter()
 
-        async def run(name: str, fn):
-            data = await anyio.to_thread.run_sync(fn)
-            results[name] = data
+        t_ixc_start = perf_counter()
+        install_rows = await anyio.to_thread.run_sync(lambda: fetch_install_period_rows(adapter, date_start, date_end, install_subject_ids, filial_id))
+        tempo_ixc_installs_period = perf_counter() - t_ixc_start
 
-        async with anyio.create_task_group() as tg:
-            tg.start_soon(run, 'install_rows', lambda: fetch_install_period_rows(adapter, date_start, date_end, install_subject_ids, filial_id))
-            tg.start_soon(run, 'maint_period_rows', lambda: fetch_maint_period_rows(adapter, date_start, date_end, maintenance_subject_ids, filial_id))
-            tg.start_soon(run, 'maint_open_rows', lambda: fetch_maint_open_rows(adapter, date_start, date_end, maintenance_subject_ids, filial_id))
-            tg.start_soon(run, 'maint_done_rows', lambda: fetch_maint_done_rows(adapter, date_start, date_end, maintenance_subject_ids, filial_id))
-            tg.start_soon(run, 'maint_backlog_rows', lambda: fetch_maint_backlog_rows(adapter, maintenance_subject_ids, filial_id))
-            tg.start_soon(run, 'maint_opened_today_rows', lambda: fetch_maint_opened_today_rows(adapter, today_date, maintenance_subject_ids, filial_id))
-            tg.start_soon(run, 'install_scheduled_today_rows', lambda: fetch_install_scheduled_today_rows(adapter, today_date, install_subject_ids, filial_id))
-            tg.start_soon(run, 'install_done_today_rows', lambda: fetch_install_done_today_rows(adapter, today_date, install_subject_ids, filial_id))
-            tg.start_soon(run, 'maint_done_today_rows', lambda: fetch_maint_done_today_rows(adapter, today_date, maintenance_subject_ids, filial_id))
-            tg.start_soon(run, 'install_pending_rows', lambda: build_installations_pending_response(adapter, today_date, limit=1000, filial_id=filial_id).get('items', []))
+        t_ixc_start = perf_counter()
+        install_overdue_rows = await anyio.to_thread.run_sync(lambda: fetch_installations_pending_rows(adapter, today_date, install_subject_ids, filial_id))
+        tempo_ixc_installs_overdue = perf_counter() - t_ixc_start
 
+        t_ixc_start = perf_counter()
+        maint_period_rows = await anyio.to_thread.run_sync(lambda: fetch_maint_period_rows(adapter, date_start, date_end, maintenance_subject_ids, filial_id))
+        tempo_ixc_maint_period = perf_counter() - t_ixc_start
+
+        t_ixc_start = perf_counter()
+        maint_done_rows = await anyio.to_thread.run_sync(lambda: fetch_maint_done_rows(adapter, date_start, date_end, maintenance_subject_ids, filial_id))
+        maint_backlog_rows = await anyio.to_thread.run_sync(lambda: fetch_maint_backlog_rows(adapter, maintenance_subject_ids, filial_id))
+        maint_opened_today_rows = await anyio.to_thread.run_sync(lambda: fetch_maint_opened_today_rows(adapter, today_date, maintenance_subject_ids, filial_id))
+        maint_done_today_rows = await anyio.to_thread.run_sync(lambda: fetch_maint_done_today_rows(adapter, today_date, maintenance_subject_ids, filial_id))
+        tempo_ixc_maint_aux = perf_counter() - t_ixc_start
+
+        t_process_start = perf_counter()
         payload = compose_dashboard_summary(
             date_start,
             total_days,
             today_date,
             definition,
-            results.get('install_rows', []),
-            results.get('maint_period_rows', []),
-            results.get('maint_open_rows', []),
-            results.get('maint_done_rows', []),
-            results.get('maint_backlog_rows', []),
-            results.get('maint_opened_today_rows', []),
-            results.get('install_scheduled_today_rows', []),
-            results.get('install_done_today_rows', []),
-            results.get('maint_done_today_rows', []),
-            results.get('install_pending_rows', []),
+            install_rows,
+            maint_period_rows,
+            maint_done_rows,
+            maint_backlog_rows,
+            maint_opened_today_rows,
+            maint_done_today_rows,
+            install_overdue_rows,
+        )
+        tempo_processamento = perf_counter() - t_process_start
+        tempo_total = perf_counter() - t0
+
+        logger.info(
+            'dashboard.summary perf tempo_total=%.4fs tempo_ixc_installs_period=%.4fs tempo_ixc_installs_overdue=%.4fs tempo_ixc_maint_period=%.4fs tempo_ixc_maint_aux=%.4fs tempo_processamento=%.4fs',
+            tempo_total,
+            tempo_ixc_installs_period,
+            tempo_ixc_installs_overdue,
+            tempo_ixc_maint_period,
+            tempo_ixc_maint_aux,
+            tempo_processamento,
         )
 
     cache_set_json(cache_key, payload, ttl_s=get_settings().dashboard_cache_ttl_s)

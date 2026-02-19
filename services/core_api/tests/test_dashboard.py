@@ -112,8 +112,10 @@ def test_dashboard_summary_returns_expected_shape():
     data = response.json()
     assert data['period']['start'] == '2025-01-01'
     assert data['period']['end'] == '2025-01-07'
-    assert {'agendadas_hoje', 'finalizadas_hoje', 'finalizadas_periodo', 'pendentes_periodo', 'total_periodo', 'pendentes_instalacao_total'}.issubset(set(data['instalacoes'].keys()))
+    assert {'agendadas_hoje', 'finalizadas_hoje', 'pendentes_hoje', 'finalizadas_periodo', 'pendentes_periodo', 'total_periodo', 'pendentes_instalacao_total'}.issubset(set(data['instalacoes'].keys()))
     assert set(data['manutencoes'].keys()) == {'abertas_total', 'abertas_hoje', 'finalizadas_hoje', 'resolvidas_periodo', 'total_periodo'}
+    assert 'today' in data
+    assert set(data['today'].keys()) == {'date', 'installs', 'maintenances'}
     assert 'installations_scheduled_by_day' in data
     assert 'maint_opened_by_day' in data
     assert 'maint_closed_by_day' in data
@@ -370,3 +372,23 @@ def test_installations_pending_endpoint_filters_correctly():
     assert ids == {'P-1', 'P-4'}
     item = next(i for i in payload['items'] if i['id'] == 'P-1')
     assert item['dias_atraso'] == 1
+
+
+def test_dashboard_today_metrics_operational_consistency():
+    rows = [
+        {'id': 'I-OPEN-TODAY', 'id_assunto': '1', 'status': 'AG', 'data_agenda': '2025-01-02 09:00:00', 'data_abertura': '2025-01-01 09:00:00', 'data_fechamento': None},
+        {'id': 'I-DONE-TODAY-SCHED-TODAY', 'id_assunto': '1', 'status': 'F', 'data_agenda': '2025-01-02 10:00:00', 'data_abertura': '2025-01-01 09:00:00', 'data_fechamento': '2025-01-02 15:00:00'},
+        {'id': 'I-OVERDUE', 'id_assunto': '15', 'status': 'A', 'data_agenda': '2025-01-01 10:00:00', 'data_abertura': '2025-01-01 09:00:00', 'data_fechamento': None},
+        {'id': 'I-DONE-TODAY-SCHED-YDAY', 'id_assunto': '15', 'status': 'F', 'data_agenda': '2025-01-01 08:00:00', 'data_abertura': '2025-01-01 09:00:00', 'data_fechamento': '2025-01-02 12:00:00'},
+        {'id': 'M-OPENED-TODAY', 'id_assunto': '17', 'status': 'A', 'data_agenda': None, 'data_abertura': '2025-01-02 08:30:00', 'data_fechamento': None},
+    ]
+
+    summary = dashboard_service.build_dashboard_summary(_SummaryAdapter(rows), date(2025, 1, 1), 7, {}, today='2025-01-02', tz_name='America/Sao_Paulo')
+
+    assert summary['today']['installs']['scheduled_total'] == 2
+    assert summary['today']['installs']['pending_today'] == 1
+    assert summary['today']['installs']['overdue_total'] == 1
+    assert summary['today']['installs']['completed_today'] == 2
+    assert summary['instalacoes']['agendadas_hoje'] == 2
+    assert summary['instalacoes']['pendentes_hoje'] == 1
+    assert summary['today']['maintenances']['opened_today'] == 1

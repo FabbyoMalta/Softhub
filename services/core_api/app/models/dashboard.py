@@ -45,6 +45,7 @@ class SummaryPeriod(BaseModel):
 class SummaryInstalacoes(BaseModel):
     agendadas_hoje: int
     finalizadas_hoje: int
+    pendentes_hoje: int = 0
     finalizadas_periodo: int
     pendentes_periodo: int
     total_periodo: int
@@ -64,10 +65,30 @@ class SummaryByDayItem(BaseModel):
     count: int
 
 
+class SummaryTodayInstalls(BaseModel):
+    scheduled_total: int
+    completed_today: int
+    pending_today: int
+    overdue_total: int
+    completion_rate: float
+
+
+class SummaryTodayMaintenances(BaseModel):
+    opened_today: int
+    closed_today: int
+
+
+class SummaryToday(BaseModel):
+    date: str
+    installs: SummaryTodayInstalls
+    maintenances: SummaryTodayMaintenances
+
+
 class DashboardSummary(BaseModel):
     period: SummaryPeriod
     instalacoes: SummaryInstalacoes
     manutencoes: SummaryManutencoes
+    today: SummaryToday
     installations_scheduled_by_day: list[SummaryByDayItem]
     maint_opened_by_day: list[SummaryByDayItem]
     maint_closed_by_day: list[SummaryByDayItem]
@@ -115,7 +136,6 @@ class AppSettings(BaseModel):
     subject_groups: SubjectGroups
     agenda_capacity: dict[str, dict[str, int]]
     filiais: dict[str, str]
-
 
 
 class InstallationPendingItem(BaseModel):

@@ -10,6 +10,7 @@ export type DashboardSummaryView = {
     finishedToday: number
     totalPeriod: number
     finishedPeriod: number
+    pendingToday: number
     pendingPeriod: number
     pendingInstallationsTotal: number
   }
@@ -21,6 +22,20 @@ export type DashboardSummaryView = {
     resolvedPeriod: number
   }
   totals: { osPeriod: number }
+  today: {
+    date: string
+    installs: {
+      scheduledTotal: number
+      completedToday: number
+      pendingToday: number
+      overdueTotal: number
+      completionRate: number
+    }
+    maintenances: {
+      openedToday: number
+      closedToday: number
+    }
+  }
   series?: {
     installationsScheduledByDay: SummaryPoint[]
     maintOpenedByDay: SummaryPoint[]
@@ -69,6 +84,7 @@ const mapSummary = (raw: any): DashboardSummaryView => {
       finishedToday: finishedTodayInstall,
       totalPeriod: totalPeriodInstall,
       finishedPeriod: normalizedFinishedPeriod,
+      pendingToday: safeNum(installRaw?.pendentes_hoje),
       pendingPeriod: normalizedPendingPeriod,
       pendingInstallationsTotal: safeNum(installRaw?.pendentes_instalacao_total),
     },
@@ -81,6 +97,20 @@ const mapSummary = (raw: any): DashboardSummaryView => {
     },
     totals: {
       osPeriod: safeNum(raw?.totals?.os_period) || totalPeriodInstall + totalPeriodMaint,
+    },
+    today: {
+      date: String(raw?.today?.date ?? periodStart),
+      installs: {
+        scheduledTotal: safeNum(raw?.today?.installs?.scheduled_total ?? installRaw?.agendadas_hoje),
+        completedToday: safeNum(raw?.today?.installs?.completed_today ?? installRaw?.finalizadas_hoje),
+        pendingToday: safeNum(raw?.today?.installs?.pending_today ?? installRaw?.pendentes_hoje),
+        overdueTotal: safeNum(raw?.today?.installs?.overdue_total ?? installRaw?.pendentes_instalacao_total),
+        completionRate: Number(raw?.today?.installs?.completion_rate ?? 0),
+      },
+      maintenances: {
+        openedToday: safeNum(raw?.today?.maintenances?.opened_today ?? maintRaw?.abertas_hoje),
+        closedToday: safeNum(raw?.today?.maintenances?.closed_today ?? maintRaw?.finalizadas_hoje),
+      },
     },
     series: {
       installationsScheduledByDay: Array.isArray(raw?.installations_scheduled_by_day) ? raw.installations_scheduled_by_day : [],
