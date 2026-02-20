@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { SummaryPanelInstallations } from './SummaryPanelInstallations'
 import { SummaryPanelMaintenances } from './SummaryPanelMaintenances'
@@ -50,18 +51,31 @@ function TinySeriesPreview({ title, data }: { title: string; data: Array<{ date:
 }
 
 export function DashboardPage({ apiBase }: { apiBase: string }) {
-  const [startDate, setStartDate] = useState(toISODate(new Date()))
+  const navigate = useNavigate()
+  const today = toISODate(new Date())
+  const [startDate, setStartDate] = useState(today)
   const [days, setDays] = useState(7)
+  const [period, setPeriod] = useState<'today' | '7d' | '14d' | '30d'>('7d')
 
-  const { data, loading, error } = useDashboardSummary(apiBase, startDate, days)
+  const { data, loading, error } = useDashboardSummary(apiBase, startDate, days, period)
 
   const periodLabel = useMemo(() => {
     if (!data?.periodStart || !data?.periodEnd) return '-'
+    if (period === 'today') return 'Hoje'
     return `${dateFormatter.format(parseISODate(data.periodStart))} até ${dateFormatter.format(parseISODate(data.periodEnd))}`
   }, [data?.periodEnd, data?.periodStart])
 
   const trendPlaceholder = computeTrend(0, data?.totals.osPeriod ?? 0)
-  const maintResolvedPeriod = Math.max(0, (data?.maintenances.totalPeriod ?? 0) - (data?.maintenances.openTotal ?? 0))
+
+  const onPeriodChange = (p: 'today' | '7d' | '14d' | '30d') => {
+    setPeriod(p)
+    if (p === 'today') {
+      setStartDate(today)
+      setDays(1)
+    } else {
+      setDays(Number(p.replace('d', '')))
+    }
+  }
 
   return (
     <section className="space-y-4">
@@ -72,16 +86,17 @@ export function DashboardPage({ apiBase }: { apiBase: string }) {
         </div>
         <div className="flex flex-wrap items-end gap-3">
           <label className="flex flex-col gap-1 text-sm text-slate-600">
-            Início
-            <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="rounded-xl border border-slate-300 px-3 py-2" />
+            Período
+            <select value={period} onChange={(e) => onPeriodChange(e.target.value as 'today' | '7d' | '14d' | '30d')} className="rounded-xl border border-slate-300 px-3 py-2">
+              <option value="today">Hoje</option>
+              <option value="7d">7 dias</option>
+              <option value="14d">14 dias</option>
+              <option value="30d">30 dias</option>
+            </select>
           </label>
           <label className="flex flex-col gap-1 text-sm text-slate-600">
-            Dias
-            <select value={days} onChange={(e) => setDays(Number(e.target.value))} className="rounded-xl border border-slate-300 px-3 py-2">
-              <option value={7}>7</option>
-              <option value={14}>14</option>
-              <option value={30}>30</option>
-            </select>
+            Início
+            <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="rounded-xl border border-slate-300 px-3 py-2" />
           </label>
           <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">{periodLabel}</span>
         </div>
@@ -98,6 +113,30 @@ export function DashboardPage({ apiBase }: { apiBase: string }) {
         <DashboardSkeleton />
       ) : (
         <>
+          <section className="rounded-2xl border border-amber-200 bg-amber-50/70 p-4 shadow-sm">
+            <div className="mb-3 flex items-center justify-between">
+              <h3 className="text-base font-semibold text-amber-900">Situação do Dia</h3>
+              <span className="text-xs text-amber-800">{data.today.date}</span>
+            </div>
+            <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
+              <div className="rounded-xl bg-white p-2.5"><p className="text-xs text-slate-500">Previstas hoje</p><p className="text-2xl font-bold text-slate-900">{data.today.installs.scheduledTotal}</p></div>
+              <div className="rounded-xl bg-white p-2.5"><p className="text-xs text-slate-500">Concluídas hoje</p><p className="text-2xl font-bold text-slate-900">{data.today.installs.completedToday}</p></div>
+              <button
+                type="button"
+                aria-label="Ver OS atrasadas"
+                title="Ver lista de OS atrasadas na Agenda"
+                onClick={() => navigate('/agenda?view=overdue')}
+                className="cursor-pointer rounded-xl border border-amber-300 bg-white p-2.5 text-left transition hover:bg-amber-50 hover:shadow-sm"
+              >
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-amber-700">Crítico</p>
+                <p className="text-xs text-slate-500">Atrasadas total</p>
+                <p className="text-2xl font-bold text-amber-900">{data.today.installs.overdueTotal}</p>
+                <p className="text-[11px] text-amber-700">Instalações abertas com agendamento antes de hoje</p>
+              </button>
+              <div className="rounded-xl bg-white p-2.5"><p className="text-xs text-slate-500">Cumprimento</p><p className="text-2xl font-bold text-slate-900">{Math.round((data.today.installs.completionRate || 0) * 100)}%</p></div>
+            </div>
+          </section>
+
           <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
             <SummaryPanelInstallations days={days} data={data.installations} />
             <SummaryPanelMaintenances
@@ -105,7 +144,26 @@ export function DashboardPage({ apiBase }: { apiBase: string }) {
               data={data.maintenances}
               totalOSPeriod={data.totals.osPeriod}
             />
+            <button className="rounded-2xl border border-amber-300 bg-amber-50 p-4 text-left shadow-sm" onClick={() => navigate('/agenda?open_pending=true')}>
+              <p className="text-sm font-semibold text-amber-800">OS pendentes</p>
+              <p className="text-3xl font-bold text-amber-900">{data.installations.pendingInstallationsTotal}</p>
+              <p className="text-xs text-amber-700">Instalações abertas com agendamento antes de hoje</p>
+            </button>
           </div>
+
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+            <div className="rounded-2xl border border-amber-300 bg-amber-50 p-4 shadow-sm">
+              <p className="text-sm font-semibold text-amber-800">Pendentes hoje</p>
+              <p className="text-3xl font-bold text-amber-900">{data.today.installs.pendingToday}</p>
+              <p className="text-xs text-amber-700">Instalações abertas com data agendada para hoje</p>
+            </div>
+            <button className="rounded-2xl border border-amber-300 bg-amber-50 p-4 text-left shadow-sm" onClick={() => navigate('/agenda?open_pending=true')}>
+              <p className="text-sm font-semibold text-amber-800">OS pendentes</p>
+              <p className="text-3xl font-bold text-amber-900">{data.installations.pendingInstallationsTotal}</p>
+              <p className="text-xs text-amber-700">Instalações abertas com agendamento antes de hoje</p>
+            </button>
+          </div>
+
 
           <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
             <TinySeriesPreview title="Instalações agendadas por dia" data={data.series?.installationsScheduledByDay || []} />
@@ -114,7 +172,6 @@ export function DashboardPage({ apiBase }: { apiBase: string }) {
           </div>
 
           <p className="text-xs text-slate-400">Tendência (placeholder): {trendPlaceholder}</p>
-          <p className="hidden">Taxa de resolução (base período): {maintResolvedPeriod}</p>
         </>
       )}
     </section>

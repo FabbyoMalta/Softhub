@@ -17,21 +17,24 @@ const typeClass = (type: DashboardItem['type']) => {
 }
 
 export function OsCard({ item, onClick }: { item: DashboardItem; onClick: () => void }) {
+  const isDone = (item.status_code || '') === 'F'
   return (
     <button
       type="button"
       onClick={onClick}
-      className="w-full rounded-xl border border-slate-200 bg-white p-3 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
+      className={`w-full rounded-xl border p-3 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md ${
+        isDone ? 'border-emerald-200 bg-emerald-50/50 opacity-90' : 'border-slate-200 bg-white'
+      }`}
     >
       <div className="mb-2 flex items-center justify-between gap-2">
         <div className="inline-flex items-center gap-1 text-sm font-semibold text-slate-700"><Clock3 size={14} />{item.time || '--:--'}</div>
-        <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${statusClass(item.status_code || '')}`}>{item.status_code || '-'}</span>
+        <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${statusClass(item.status_code || '')}`}>{isDone ? 'Finalizada' : (item.status_code || '-')}</span>
       </div>
       <p className="line-clamp-1 text-sm font-semibold text-slate-900">{item.customer_name || 'Cliente não informado'}</p>
       <p className="mt-1 inline-flex items-center gap-1 text-xs text-slate-600"><MapPin size={13} />{item.bairro || '-'} · {item.cidade || '-'}</p>
-      <div className="mt-2 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium bg-slate-100 text-slate-700">
+      <div className={`mt-2 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${typeClass(item.type)}`}>
         <Wrench size={12} />
-        <span className={typeClass(item.type)}>{item.type}</span>
+        <span>{item.type}</span>
       </div>
     </button>
   )

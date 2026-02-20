@@ -39,6 +39,14 @@ CAPACITY_STATUS_CODES = ['AG', 'RAG', 'AS', 'DS', 'EX', 'F', 'A', 'AN', 'EN']
 logger = logging.getLogger(__name__)
 
 
+def _clients_to_map(rows: Any) -> dict[str, dict[str, Any]]:
+    if isinstance(rows, dict):
+        return rows
+    if isinstance(rows, list):
+        return {str(r.get('id') or r.get('id_cliente') or ''): r for r in rows if isinstance(r, dict) and (r.get('id') or r.get('id_cliente'))}
+    return {}
+
+
 def _load_subject_ids() -> tuple[set[str], set[str]]:
     settings = get_settings_payload()
     install_subject_ids = {
@@ -77,6 +85,19 @@ def _parse_dt(raw: str | None) -> datetime | None:
     return None
 
 
+
+
+def resolve_period(period: str | None, start: str | None, days: int, today_override: date | None = None) -> tuple[str | None, int]:
+    if not period:
+        return start, days
+    p = period.strip().lower()
+    if p == 'today':
+        base_today = today_override or date.today()
+        return base_today.strftime('%Y-%m-%d'), 1
+    if p.endswith('d') and p[:-1].isdigit():
+        return start, max(1, min(int(p[:-1]), 31))
+    return start, days
+
 def agenda_week_range(start_raw: str | None, days: int) -> tuple[date, date]:
     start = parse_date_or_default(start_raw, date.today())
     total_days = max(1, min(days, 31))
@@ -103,7 +124,8 @@ def resolve_definition(definition_json: dict[str, Any] | None, scope: str) -> di
 
     if not d.get('status_codes'):
         if scope == 'agenda_week':
-            d['status_codes'] = STATUS_GROUPS['scheduled']
+            merged = STATUS_GROUPS['open_like'] + STATUS_GROUPS['scheduled'] + STATUS_GROUPS['done']
+            d['status_codes'] = sorted(set(merged))
         else:
             merged = STATUS_GROUPS['open_like'] + STATUS_GROUPS['scheduled']
             d['status_codes'] = sorted(set(merged))
@@ -228,6 +250,7 @@ def _fetch_order_rows_without_date(
     adapter: IXCAdapter,
     statuses: list[str],
     assunto_ids: list[str],
+    filial_id: str | None = None,
 ) -> list[dict[str, Any]]:
     status_list = statuses or [None]
     assunto_list = assunto_ids or [None]
@@ -279,7 +302,7 @@ def fetch_dashboard_items(
 
     ids = sorted({str(r.get('id_cliente')) for r in rows if r.get('id_cliente')})
     with timer('dashboard.customer_lookup', logger, {'ids_count': len(ids)}):
-        clientes = adapter.list_clientes_by_ids(ids) if ids else {}
+        clientes = _clients_to_map(adapter.list_clientes_by_ids(ids)) if ids else {}
 
     return [
         normalize_row(r, clientes.get(str(r.get('id_cliente') or '')), install_subject_ids, maintenance_subject_ids)
@@ -424,7 +447,7 @@ def fetch_maintenance_items(
         rows = _sort_rows(rows, 'data_abertura', reverse=False)
 
     ids = sorted({str(r.get('id_cliente')) for r in rows if r.get('id_cliente')})
-    clientes = adapter.list_clientes_by_ids(ids) if ids else {}
+    clientes = _clients_to_map(adapter.list_clientes_by_ids(ids)) if ids else {}
     return [
         normalize_row(r, clientes.get(str(r.get('id_cliente') or '')), install_subject_ids, maintenance_subject_ids)
         for r in rows
@@ -510,8 +533,45 @@ def fetch_maint_done_rows(adapter: IXCAdapter, date_start: date, date_end: date,
     return _fetch_order_rows(adapter, date_start, date_end, STATUS_GROUPS['done'], sorted(maintenance_subject_ids), date_field='su_oss_chamado.data_fechamento', filial_id=filial_id)
 
 
+def fetch_maint_backlog_rows(adapter: IXCAdapter, maintenance_subject_ids: set[str], filial_id: str | None = None) -> list[dict[str, Any]]:
+    status_list = STATUS_GROUPS['open_like'] + STATUS_GROUPS['scheduled']
+    grids: list[list[dict[str, str]]] = []
+    for assunto in sorted(maintenance_subject_ids):
+        for status in status_list:
+            grid = [
+                {'TB': TB_OS_ID_ASSUNTO, 'OP': '=', 'P': assunto},
+                {'TB': TB_OS_STATUS, 'OP': '=', 'P': status},
+            ]
+            grids.append(grid)
+
+    seen: set[str] = set()
+    rows: list[dict[str, Any]] = []
+    for grid in grids:
+        for row in adapter.list_service_orders(grid):
+            key = str(row.get('id') or '')
+            if key and key not in seen:
+                seen.add(key)
+                rows.append(row)
+    return rows
+
+
 def fetch_maint_opened_today_rows(adapter: IXCAdapter, today_date: date, maintenance_subject_ids: set[str], filial_id: str | None = None) -> list[dict[str, Any]]:
     return _fetch_rows_for_exact_day(adapter, date_field='su_oss_chamado.data_abertura', day=today_date, assunto_ids=sorted(maintenance_subject_ids), filial_id=filial_id)
+
+
+def fetch_install_scheduled_today_rows(adapter: IXCAdapter, today_date: date, install_subject_ids: set[str], filial_id: str | None = None) -> list[dict[str, Any]]:
+    rows = _fetch_rows_for_exact_day(adapter, date_field='su_oss_chamado.data_agenda', day=today_date, assunto_ids=sorted(install_subject_ids), filial_id=filial_id)
+    return [row for row in rows if str(row.get('status') or '') != 'F']
+
+
+def fetch_install_done_today_rows(adapter: IXCAdapter, today_date: date, install_subject_ids: set[str], filial_id: str | None = None) -> list[dict[str, Any]]:
+    rows = _fetch_rows_for_exact_day(adapter, date_field='su_oss_chamado.data_fechamento', day=today_date, assunto_ids=sorted(install_subject_ids), filial_id=filial_id)
+    return [row for row in rows if str(row.get('status') or '') == 'F']
+
+
+def fetch_maint_done_today_rows(adapter: IXCAdapter, today_date: date, maintenance_subject_ids: set[str], filial_id: str | None = None) -> list[dict[str, Any]]:
+    rows = _fetch_rows_for_exact_day(adapter, date_field='su_oss_chamado.data_fechamento', day=today_date, assunto_ids=sorted(maintenance_subject_ids), filial_id=filial_id)
+    return [row for row in rows if str(row.get('status') or '') == 'F']
 
 
 def compose_dashboard_summary(
@@ -521,46 +581,72 @@ def compose_dashboard_summary(
     definition_json: dict[str, Any] | None,
     install_rows: list[dict[str, Any]],
     maint_period_rows: list[dict[str, Any]],
-    maint_open_rows: list[dict[str, Any]],
     maint_done_rows: list[dict[str, Any]],
+    maint_backlog_rows: list[dict[str, Any]],
     maint_opened_today_rows: list[dict[str, Any]],
+    maint_done_today_rows: list[dict[str, Any]],
+    install_overdue_rows: list[dict[str, Any]],
 ) -> dict[str, Any]:
     date_end = date_start + timedelta(days=total_days - 1)
-    day_start = datetime.combine(today_date, datetime.min.time())
-    day_end = day_start + timedelta(days=1)
-
     install_rows = _status_filtered(install_rows, definition_json)
     maint_period_rows = _status_filtered(maint_period_rows, definition_json)
-    maint_open_rows = _status_filtered(maint_open_rows, definition_json)
     maint_done_rows = _status_filtered(maint_done_rows, definition_json)
+
+    scheduled_total = 0
+    completed_today = 0
+    pending_today = 0
+    for row in install_rows:
+        status = str(row.get('status') or '')
+        scheduled_dt = _parse_dt(row.get('data_agenda') or row.get('data_reservada'))
+        closed_dt = _parse_dt(row.get('data_fechamento'))
+
+        if scheduled_dt and scheduled_dt.date() == today_date:
+            scheduled_total += 1
+            if _is_open_installation_status(status):
+                pending_today += 1
+        if closed_dt and closed_dt.date() == today_date and _is_done_status(status):
+            completed_today += 1
+
+    overdue_total = len(install_overdue_rows)
+    completion_rate = 0.0 if scheduled_total <= 0 else round(completed_today / scheduled_total, 4)
+
+    finalizadas_periodo = sum(1 for row in install_rows if _is_done_status(str(row.get('status') or '')))
+    pendentes_periodo = max(0, len(install_rows) - finalizadas_periodo)
 
     return {
         'period': {'start': date_start.strftime('%Y-%m-%d'), 'end': date_end.strftime('%Y-%m-%d')},
         'instalacoes': {
-            'agendadas_hoje': sum(
-                1
-                for row in install_rows
-                if str(row.get('status') or '') in STATUS_GROUPS['scheduled'] and _is_same_day(row.get('data_agenda'), today_date)
-            ),
-            'finalizadas_hoje': sum(
-                1
-                for row in install_rows
-                if str(row.get('status') or '') == 'F' and _is_same_day(row.get('data_fechamento'), today_date)
-            ),
+            'agendadas_hoje': scheduled_total,
+            'finalizadas_hoje': completed_today,
+            'pendentes_hoje': pending_today,
+            'finalizadas_periodo': finalizadas_periodo,
+            'pendentes_periodo': pendentes_periodo,
             'total_periodo': len(install_rows),
+            'pendentes_instalacao_total': overdue_total,
         },
         'manutencoes': {
-            'abertas_total': len(maint_open_rows),
-            'abertas_hoje': sum(1 for row in maint_opened_today_rows if _parse_dt(row.get('data_abertura')) and day_start <= _parse_dt(row.get('data_abertura')) < day_end),
-            'finalizadas_hoje': sum(
-                1
-                for row in maint_done_rows
-                if str(row.get('status') or '') == 'F' and _is_same_day(row.get('data_fechamento'), today_date)
-            ),
+            'abertas_total': len(maint_backlog_rows),
+            'abertas_hoje': len(maint_opened_today_rows),
+            'finalizadas_hoje': len(maint_done_today_rows),
+            'resolvidas_periodo': len(maint_done_rows),
             'total_periodo': len(maint_period_rows),
         },
+        'today': {
+            'date': today_date.strftime('%Y-%m-%d'),
+            'installs': {
+                'scheduled_total': scheduled_total,
+                'completed_today': completed_today,
+                'pending_today': pending_today,
+                'overdue_total': overdue_total,
+                'completion_rate': completion_rate,
+            },
+            'maintenances': {
+                'opened_today': len(maint_opened_today_rows),
+                'closed_today': len(maint_done_today_rows),
+            },
+        },
         'installations_scheduled_by_day': _count_by_day(install_rows, 'data_agenda', date_start, total_days),
-        'maint_opened_by_day': _count_by_day(maint_open_rows, 'data_abertura', date_start, total_days),
+        'maint_opened_by_day': _count_by_day(maint_period_rows, 'data_abertura', date_start, total_days),
         'maint_closed_by_day': _count_by_day(maint_done_rows, 'data_fechamento', date_start, total_days),
     }
 
@@ -602,9 +688,11 @@ def build_dashboard_summary(
 
         install_rows = fetch_install_period_rows(adapter, date_start, date_end, install_subject_ids, filial_id)
         maint_period_rows = fetch_maint_period_rows(adapter, date_start, date_end, maintenance_subject_ids, filial_id)
-        maint_open_rows = fetch_maint_open_rows(adapter, date_start, date_end, maintenance_subject_ids, filial_id)
         maint_done_rows = fetch_maint_done_rows(adapter, date_start, date_end, maintenance_subject_ids, filial_id)
+        maint_backlog_rows = fetch_maint_backlog_rows(adapter, maintenance_subject_ids, filial_id)
         maint_opened_today_rows = fetch_maint_opened_today_rows(adapter, today_date, maintenance_subject_ids, filial_id)
+        maint_done_today_rows = fetch_maint_done_today_rows(adapter, today_date, maintenance_subject_ids, filial_id)
+        install_overdue_rows = fetch_installations_pending_rows(adapter, today_date, install_subject_ids, filial_id)
 
         return compose_dashboard_summary(
             date_start,
@@ -613,7 +701,81 @@ def build_dashboard_summary(
             definition_json,
             install_rows,
             maint_period_rows,
-            maint_open_rows,
             maint_done_rows,
+            maint_backlog_rows,
             maint_opened_today_rows,
+            maint_done_today_rows,
+            install_overdue_rows,
         )
+
+
+def _is_open_installation_status(status: str) -> bool:
+    s = (status or '').strip().upper()
+    return s not in {'F', 'C', 'CANCELADA', 'CAN'}
+
+
+def _is_done_status(status: str) -> bool:
+    return (status or '').strip().upper() == 'F'
+
+
+def fetch_installations_pending_rows(
+    adapter: IXCAdapter,
+    today_date: date,
+    install_subject_ids: set[str],
+    filial_id: str | None = None,
+) -> list[dict[str, Any]]:
+    statuses = STATUS_GROUPS['open_like'] + STATUS_GROUPS['scheduled']
+    rows = _fetch_order_rows_without_date(adapter, statuses, sorted(install_subject_ids), filial_id=filial_id)
+
+    pending: list[dict[str, Any]] = []
+    for row in rows:
+        status = str(row.get('status') or '')
+        if not _is_open_installation_status(status):
+            continue
+        dt = _parse_dt(row.get('data_agenda') or row.get('data_reservada'))
+        if not dt:
+            continue
+        if dt.date() >= today_date:
+            continue
+        pending.append(row)
+    return pending
+
+
+def build_installations_pending_response(
+    adapter: IXCAdapter,
+    today_date: date,
+    limit: int = 200,
+    filial_id: str | None = None,
+) -> dict[str, Any]:
+    install_subject_ids, _ = _load_subject_ids()
+    rows = fetch_installations_pending_rows(adapter, today_date, install_subject_ids, filial_id=filial_id)
+
+    ids = sorted({str(r.get('id_cliente')) for r in rows if r.get('id_cliente')})
+    clientes = _clients_to_map(adapter.list_clientes_by_ids(ids)) if ids else {}
+
+    items: list[dict[str, Any]] = []
+    for row in rows:
+        dt = _parse_dt(row.get('data_agenda') or row.get('data_reservada'))
+        if not dt:
+            continue
+        cid = str(row.get('id_cliente') or '')
+        c = clientes.get(cid, {})
+        items.append(
+            {
+                'id': str(row.get('id') or ''),
+                'cliente': c.get('nome') or c.get('razao_social') or f'Cliente {cid}',
+                'id_cliente': cid or None,
+                'bairro_cidade': ', '.join([x for x in [c.get('bairro') or row.get('bairro'), c.get('cidade') or row.get('cidade')] if x]) or None,
+                'assunto_id': str(row.get('id_assunto') or '') or None,
+                'categoria': 'instalacao',
+                'status': str(row.get('status') or '') or None,
+                'data_agendada': dt.strftime('%Y-%m-%d'),
+                'hora': dt.strftime('%H:%M') if (dt.hour or dt.minute) else None,
+                'dias_atraso': max(0, (today_date - dt.date()).days),
+                'filial': str(row.get('id_filial') or '') or None,
+            }
+        )
+
+    items.sort(key=lambda x: (-int(x['dias_atraso']), x['data_agendada'], x['id']))
+    capped = items[: max(1, limit)]
+    return {'total': len(items), 'items': capped}
