@@ -112,8 +112,10 @@ def test_dashboard_summary_returns_expected_shape():
     data = response.json()
     assert data['period']['start'] == '2025-01-01'
     assert data['period']['end'] == '2025-01-07'
-    assert set(data['instalacoes'].keys()) == {'agendadas_hoje', 'finalizadas_hoje', 'finalizadas_periodo', 'pendentes_periodo', 'total_periodo'}
+    assert {'agendadas_hoje', 'finalizadas_hoje', 'pendentes_hoje', 'finalizadas_periodo', 'pendentes_periodo', 'total_periodo', 'pendentes_instalacao_total'}.issubset(set(data['instalacoes'].keys()))
     assert set(data['manutencoes'].keys()) == {'abertas_total', 'abertas_hoje', 'finalizadas_hoje', 'resolvidas_periodo', 'total_periodo'}
+    assert 'today' in data
+    assert set(data['today'].keys()) == {'date', 'installs', 'maintenances'}
     assert 'installations_scheduled_by_day' in data
     assert 'maint_opened_by_day' in data
     assert 'maint_closed_by_day' in data
@@ -313,3 +315,80 @@ def test_agenda_capacity_uses_tue_limit_mapping():
     assert day['capacity']['total']['limit'] == 5
     assert day['capacity']['total']['count'] == 6
     assert day['capacity']['total']['level'] == 'red'
+
+
+
+def test_dashboard_summary_period_today():
+    response = client.get('/dashboard/summary', params={'period': 'today', 'today': '2025-01-02'})
+    assert response.status_code == 200
+    data = response.json()
+    assert data['period']['start'] == '2025-01-02'
+    assert data['period']['end'] == '2025-01-02'
+
+
+class _PendingInstallAdapter:
+    def list_service_orders(self, grid_filters):
+        rows = [
+            {'id': 'P-1', 'id_cliente': '10', 'id_assunto': '1', 'status': 'AG', 'data_agenda': '2025-01-01 10:00:00', 'id_filial': '1', 'bairro': 'Centro', 'cidade': 'Vitória'},
+            {'id': 'P-2', 'id_cliente': '11', 'id_assunto': '1', 'status': 'AG', 'data_agenda': '2025-01-02 10:00:00', 'id_filial': '1', 'bairro': 'Centro', 'cidade': 'Vitória'},
+            {'id': 'P-3', 'id_cliente': '12', 'id_assunto': '1', 'status': 'F', 'data_agenda': '2025-01-01 09:00:00', 'id_filial': '1', 'bairro': 'Centro', 'cidade': 'Vitória'},
+            {'id': 'P-4', 'id_cliente': '13', 'id_assunto': '15', 'status': 'A', 'data_agenda': '2024-12-28 09:00:00', 'id_filial': '2', 'bairro': 'Praia', 'cidade': 'Vila Velha'},
+        ]
+        field_map = {
+            'su_oss_chamado.status': 'status',
+            'su_oss_chamado.id_assunto': 'id_assunto',
+            'su_oss_chamado.id_filial': 'id_filial',
+            'su_oss_chamado.data_agenda': 'data_agenda',
+        }
+        def match(row, flt):
+            tb, op, p = flt.get('TB'), flt.get('OP'), str(flt.get('P') or '')
+            value = str(row.get(field_map.get(tb, ''), '') or '')
+            if op == '=': return value == p
+            if op == 'IN': return value in [x.strip() for x in p.split(',') if x.strip()]
+            if op == '>=': return value >= p
+            if op == '<=': return value <= p
+            if op == '<': return value < p
+            return True
+        out = rows
+        for f in grid_filters:
+            out = [r for r in out if match(r, f)]
+        return out
+
+    def list_clientes_by_ids(self, ids):
+        return [{'id': i, 'nome': f'Cliente {i}', 'bairro': 'Centro', 'cidade': 'Vitória'} for i in ids]
+
+
+def test_installations_pending_endpoint_filters_correctly():
+    app.dependency_overrides[get_ixc_adapter] = lambda: _PendingInstallAdapter()
+    try:
+        response = client.get('/dashboard/installations-pending', params={'today': '2025-01-02'})
+    finally:
+        app.dependency_overrides.pop(get_ixc_adapter, None)
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload['total'] == 2
+    ids = {item['id'] for item in payload['items']}
+    assert ids == {'P-1', 'P-4'}
+    item = next(i for i in payload['items'] if i['id'] == 'P-1')
+    assert item['dias_atraso'] == 1
+
+
+def test_dashboard_today_metrics_operational_consistency():
+    rows = [
+        {'id': 'I-OPEN-TODAY', 'id_assunto': '1', 'status': 'AG', 'data_agenda': '2025-01-02 09:00:00', 'data_abertura': '2025-01-01 09:00:00', 'data_fechamento': None},
+        {'id': 'I-DONE-TODAY-SCHED-TODAY', 'id_assunto': '1', 'status': 'F', 'data_agenda': '2025-01-02 10:00:00', 'data_abertura': '2025-01-01 09:00:00', 'data_fechamento': '2025-01-02 15:00:00'},
+        {'id': 'I-OVERDUE', 'id_assunto': '15', 'status': 'A', 'data_agenda': '2025-01-01 10:00:00', 'data_abertura': '2025-01-01 09:00:00', 'data_fechamento': None},
+        {'id': 'I-DONE-TODAY-SCHED-YDAY', 'id_assunto': '15', 'status': 'F', 'data_agenda': '2025-01-01 08:00:00', 'data_abertura': '2025-01-01 09:00:00', 'data_fechamento': '2025-01-02 12:00:00'},
+        {'id': 'M-OPENED-TODAY', 'id_assunto': '17', 'status': 'A', 'data_agenda': None, 'data_abertura': '2025-01-02 08:30:00', 'data_fechamento': None},
+    ]
+
+    summary = dashboard_service.build_dashboard_summary(_SummaryAdapter(rows), date(2025, 1, 1), 7, {}, today='2025-01-02', tz_name='America/Sao_Paulo')
+
+    assert summary['today']['installs']['scheduled_total'] == 2
+    assert summary['today']['installs']['pending_today'] == 1
+    assert summary['today']['installs']['overdue_total'] == 1
+    assert summary['today']['installs']['completed_today'] == 2
+    assert summary['instalacoes']['agendadas_hoje'] == 2
+    assert summary['instalacoes']['pendentes_hoje'] == 1
+    assert summary['today']['maintenances']['opened_today'] == 1

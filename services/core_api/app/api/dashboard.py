@@ -3,11 +3,12 @@ from __future__ import annotations
 import json
 import logging
 from datetime import timedelta
+from time import perf_counter
 
 import anyio
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 
-from app.models.dashboard import AgendaWeekResponse, DashboardItem, DashboardSummary
+from app.models.dashboard import AgendaWeekResponse, DashboardItem, DashboardSummary, InstallationsPendingResponse
 from app.config import get_settings
 from app.services.adapters import get_ixc_adapter
 from app.services.dashboard import (
@@ -19,14 +20,14 @@ from app.services.dashboard import (
     fetch_maint_done_rows,
     fetch_maint_done_today_rows,
     fetch_maint_backlog_rows,
-    fetch_maint_open_rows,
     fetch_maint_opened_today_rows,
     fetch_maint_period_rows,
-    fetch_install_done_today_rows,
     fetch_maintenance_items,
-    fetch_install_scheduled_today_rows,
     maintenances_range,
     _resolve_today,
+    build_installations_pending_response,
+    fetch_installations_pending_rows,
+    resolve_period,
 )
 from app.services.filters import get_saved_filter_definition
 from app.utils.cache import cache_get_json, cache_set_json, stable_json_hash
@@ -51,12 +52,14 @@ def _resolve_definition(filter_id: str | None, filter_json: str | None) -> dict:
 def get_agenda_week(
     start: str | None = Query(default=None),
     days: int = Query(default=7, ge=1, le=31),
+    period: str | None = Query(default=None),
     filter_id: str | None = Query(default=None),
     filter_json: str | None = Query(default=None),
     filial_id: str | None = Query(default=None, pattern='^(1|2)$'),
     adapter=Depends(get_ixc_adapter),
 ):
     definition = _resolve_definition(filter_id, filter_json)
+    start, days = resolve_period(period, start, days)
     date_start, _ = agenda_week_range(start, days)
     return build_agenda_week(adapter, date_start, days, definition, filial_id=filial_id)
 
@@ -81,6 +84,7 @@ def get_maintenances(
 async def get_summary(
     start: str | None = Query(default=None),
     days: int = Query(default=7, ge=1, le=31),
+    period: str | None = Query(default=None),
     filial_id: str | None = Query(default=None, pattern='^(1|2)$'),
     today: str | None = Query(default=None),
     tz: str | None = Query(default='America/Sao_Paulo'),
@@ -90,6 +94,8 @@ async def get_summary(
     adapter=Depends(get_ixc_adapter),
 ): 
     definition = _resolve_definition(filter_id, filter_json)
+    today_date = _resolve_today(today, tz)
+    start, days = resolve_period(period, start, days, today_override=today_date)
     date_start, _ = agenda_week_range(start, days)
     filter_hash = stable_json_hash(definition)
     cache_key = f"softhub:dash:summary:{date_start.strftime('%Y-%m-%d')}:{days}:{filial_id or 'all'}:{filter_hash}"
@@ -104,40 +110,73 @@ async def get_summary(
         install_subject_ids, maintenance_subject_ids = _load_subject_ids()
         total_days = max(1, min(days, 31))
         date_end = date_start + timedelta(days=total_days - 1)
-        today_date = _resolve_today(today, tz)
 
-        results: dict[str, list[dict]] = {}
+        t0 = perf_counter()
 
-        async def run(name: str, fn):
-            data = await anyio.to_thread.run_sync(fn)
-            results[name] = data
+        t_ixc_start = perf_counter()
+        install_rows = await anyio.to_thread.run_sync(lambda: fetch_install_period_rows(adapter, date_start, date_end, install_subject_ids, filial_id))
+        tempo_ixc_installs_period = perf_counter() - t_ixc_start
 
-        async with anyio.create_task_group() as tg:
-            tg.start_soon(run, 'install_rows', lambda: fetch_install_period_rows(adapter, date_start, date_end, install_subject_ids, filial_id))
-            tg.start_soon(run, 'maint_period_rows', lambda: fetch_maint_period_rows(adapter, date_start, date_end, maintenance_subject_ids, filial_id))
-            tg.start_soon(run, 'maint_open_rows', lambda: fetch_maint_open_rows(adapter, date_start, date_end, maintenance_subject_ids, filial_id))
-            tg.start_soon(run, 'maint_done_rows', lambda: fetch_maint_done_rows(adapter, date_start, date_end, maintenance_subject_ids, filial_id))
-            tg.start_soon(run, 'maint_backlog_rows', lambda: fetch_maint_backlog_rows(adapter, maintenance_subject_ids, filial_id))
-            tg.start_soon(run, 'maint_opened_today_rows', lambda: fetch_maint_opened_today_rows(adapter, today_date, maintenance_subject_ids, filial_id))
-            tg.start_soon(run, 'install_scheduled_today_rows', lambda: fetch_install_scheduled_today_rows(adapter, today_date, install_subject_ids, filial_id))
-            tg.start_soon(run, 'install_done_today_rows', lambda: fetch_install_done_today_rows(adapter, today_date, install_subject_ids, filial_id))
-            tg.start_soon(run, 'maint_done_today_rows', lambda: fetch_maint_done_today_rows(adapter, today_date, maintenance_subject_ids, filial_id))
+        t_ixc_start = perf_counter()
+        install_overdue_rows = await anyio.to_thread.run_sync(lambda: fetch_installations_pending_rows(adapter, today_date, install_subject_ids, filial_id))
+        tempo_ixc_installs_overdue = perf_counter() - t_ixc_start
 
+        t_ixc_start = perf_counter()
+        maint_period_rows = await anyio.to_thread.run_sync(lambda: fetch_maint_period_rows(adapter, date_start, date_end, maintenance_subject_ids, filial_id))
+        tempo_ixc_maint_period = perf_counter() - t_ixc_start
+
+        t_ixc_start = perf_counter()
+        maint_done_rows = await anyio.to_thread.run_sync(lambda: fetch_maint_done_rows(adapter, date_start, date_end, maintenance_subject_ids, filial_id))
+        maint_backlog_rows = await anyio.to_thread.run_sync(lambda: fetch_maint_backlog_rows(adapter, maintenance_subject_ids, filial_id))
+        maint_opened_today_rows = await anyio.to_thread.run_sync(lambda: fetch_maint_opened_today_rows(adapter, today_date, maintenance_subject_ids, filial_id))
+        maint_done_today_rows = await anyio.to_thread.run_sync(lambda: fetch_maint_done_today_rows(adapter, today_date, maintenance_subject_ids, filial_id))
+        tempo_ixc_maint_aux = perf_counter() - t_ixc_start
+
+        t_process_start = perf_counter()
         payload = compose_dashboard_summary(
             date_start,
             total_days,
             today_date,
             definition,
-            results.get('install_rows', []),
-            results.get('maint_period_rows', []),
-            results.get('maint_open_rows', []),
-            results.get('maint_done_rows', []),
-            results.get('maint_backlog_rows', []),
-            results.get('maint_opened_today_rows', []),
-            results.get('install_scheduled_today_rows', []),
-            results.get('install_done_today_rows', []),
-            results.get('maint_done_today_rows', []),
+            install_rows,
+            maint_period_rows,
+            maint_done_rows,
+            maint_backlog_rows,
+            maint_opened_today_rows,
+            maint_done_today_rows,
+            install_overdue_rows,
+        )
+        tempo_processamento = perf_counter() - t_process_start
+        tempo_total = perf_counter() - t0
+
+        logger.info(
+            'dashboard.summary perf tempo_total=%.4fs tempo_ixc_installs_period=%.4fs tempo_ixc_installs_overdue=%.4fs tempo_ixc_maint_period=%.4fs tempo_ixc_maint_aux=%.4fs tempo_processamento=%.4fs',
+            tempo_total,
+            tempo_ixc_installs_period,
+            tempo_ixc_installs_overdue,
+            tempo_ixc_maint_period,
+            tempo_ixc_maint_aux,
+            tempo_processamento,
         )
 
     cache_set_json(cache_key, payload, ttl_s=get_settings().dashboard_cache_ttl_s)
     return payload
+
+
+
+@router.get('/installations-pending', response_model=InstallationsPendingResponse)
+def get_installations_pending(
+    start: str | None = Query(default=None),
+    days: int = Query(default=7, ge=1, le=31),
+    filter_id: str | None = Query(default=None),
+    filter_json: str | None = Query(default=None),
+    filial_id: str | None = Query(default=None, pattern='^(1|2)$'),
+    limit: int = Query(default=200, ge=1, le=1000),
+    today: str | None = Query(default=None),
+    tz: str | None = Query(default='America/Sao_Paulo'),
+    adapter=Depends(get_ixc_adapter),
+):
+    # start/days kept for compatibility; pending is always < today
+    _resolve_definition(filter_id, filter_json)
+    today_date = _resolve_today(today, tz)
+    return build_installations_pending_response(adapter, today_date=today_date, limit=limit, filial_id=filial_id)
