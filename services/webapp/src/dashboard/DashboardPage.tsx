@@ -1,8 +1,8 @@
 import React, { useMemo, useState } from 'react'
-import { Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
+import { useNavigate } from 'react-router-dom'
 import { SummaryPanelInstallations } from './SummaryPanelInstallations'
 import { SummaryPanelMaintenances } from './SummaryPanelMaintenances'
-import { computeTrend, useDashboardSummary } from './useDashboardSummary'
+import { useDashboardSummary } from './useDashboardSummary'
 
 const dateFormatter = new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit' })
 const toISODate = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
@@ -29,38 +29,30 @@ function DashboardSkeleton() {
   )
 }
 
-function TinySeriesPreview({ title, data }: { title: string; data: Array<{ date: string; count: number }> }) {
-  if (!data.length) return null
-
-  return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-      <p className="mb-2 text-sm font-medium text-slate-700">{title}</p>
-      <div className="h-24 w-full">
-        <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={data}>
-            <XAxis dataKey="date" hide />
-            <YAxis hide />
-            <Tooltip />
-            <Line type="monotone" dataKey="count" stroke="#0ea5e9" strokeWidth={2} dot={false} />
-          </LineChart>
-        </ResponsiveContainer>
-      </div>
-    </div>
-  )
-}
-
 export function DashboardPage({ apiBase }: { apiBase: string }) {
-  const [startDate, setStartDate] = useState(toISODate(new Date()))
+  const navigate = useNavigate()
+  const today = toISODate(new Date())
+  const [startDate, setStartDate] = useState(today)
   const [days, setDays] = useState(7)
+  const [period, setPeriod] = useState<'today' | '7d' | '14d' | '30d'>('7d')
 
-  const { data, loading, error } = useDashboardSummary(apiBase, startDate, days)
+  const { data, loading, error } = useDashboardSummary(apiBase, startDate, days, period)
 
   const periodLabel = useMemo(() => {
     if (!data?.periodStart || !data?.periodEnd) return '-'
+    if (period === 'today') return 'Hoje'
     return `${dateFormatter.format(parseISODate(data.periodStart))} até ${dateFormatter.format(parseISODate(data.periodEnd))}`
   }, [data?.periodEnd, data?.periodStart])
 
-  const trendPlaceholder = computeTrend(0, data?.totals.osPeriod ?? 0)
+  const onPeriodChange = (p: 'today' | '7d' | '14d' | '30d') => {
+    setPeriod(p)
+    if (p === 'today') {
+      setStartDate(today)
+      setDays(1)
+    } else {
+      setDays(Number(p.replace('d', '')))
+    }
+  }
 
   return (
     <section className="space-y-4">
@@ -71,16 +63,17 @@ export function DashboardPage({ apiBase }: { apiBase: string }) {
         </div>
         <div className="flex flex-wrap items-end gap-3">
           <label className="flex flex-col gap-1 text-sm text-slate-600">
-            Início
-            <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="rounded-xl border border-slate-300 px-3 py-2" />
+            Período
+            <select value={period} onChange={(e) => onPeriodChange(e.target.value as 'today' | '7d' | '14d' | '30d')} className="rounded-xl border border-slate-300 px-3 py-2">
+              <option value="today">Hoje</option>
+              <option value="7d">7 dias</option>
+              <option value="14d">14 dias</option>
+              <option value="30d">30 dias</option>
+            </select>
           </label>
           <label className="flex flex-col gap-1 text-sm text-slate-600">
-            Dias
-            <select value={days} onChange={(e) => setDays(Number(e.target.value))} className="rounded-xl border border-slate-300 px-3 py-2">
-              <option value={7}>7</option>
-              <option value={14}>14</option>
-              <option value={30}>30</option>
-            </select>
+            Início
+            <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="rounded-xl border border-slate-300 px-3 py-2" />
           </label>
           <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">{periodLabel}</span>
         </div>
@@ -97,6 +90,30 @@ export function DashboardPage({ apiBase }: { apiBase: string }) {
         <DashboardSkeleton />
       ) : (
         <>
+          <section className="rounded-2xl border border-amber-200 bg-amber-50/70 p-4 shadow-sm">
+            <div className="mb-3 flex items-center justify-between">
+              <h3 className="text-base font-semibold text-amber-900">Situação do Dia</h3>
+              <span className="text-xs text-amber-800">{data.today.date}</span>
+            </div>
+            <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
+              <div className="rounded-xl bg-white p-2.5"><p className="text-xs text-slate-500">Previstas hoje</p><p className="text-2xl font-bold text-slate-900">{data.today.installs.scheduledTotal}</p></div>
+              <div className="rounded-xl bg-white p-2.5"><p className="text-xs text-slate-500">Concluídas hoje</p><p className="text-2xl font-bold text-slate-900">{data.today.installs.completedToday}</p></div>
+              <button
+                type="button"
+                aria-label="Ver OS atrasadas"
+                title="Ver lista de OS atrasadas na Agenda"
+                onClick={() => navigate('/agenda?view=overdue')}
+                className="cursor-pointer rounded-xl border border-amber-300 bg-white p-2.5 text-left transition hover:bg-amber-50 hover:shadow-sm"
+              >
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-amber-700">Crítico</p>
+                <p className="text-xs text-slate-500">Atrasadas total</p>
+                <p className="text-2xl font-bold text-amber-900">{data.today.installs.overdueTotal}</p>
+                <p className="text-[11px] text-amber-700">Instalações abertas com agendamento antes de hoje</p>
+              </button>
+              <div className="rounded-xl bg-white p-2.5"><p className="text-xs text-slate-500">Cumprimento</p><p className="text-2xl font-bold text-slate-900">{Math.round((data.today.installs.completionRate || 0) * 100)}%</p></div>
+            </div>
+          </section>
+
           <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
             <SummaryPanelInstallations days={days} data={data.installations} />
             <SummaryPanelMaintenances
@@ -106,13 +123,6 @@ export function DashboardPage({ apiBase }: { apiBase: string }) {
             />
           </div>
 
-          <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
-            <TinySeriesPreview title="Instalações agendadas por dia" data={data.series?.installationsScheduledByDay || []} />
-            <TinySeriesPreview title="Manutenções abertas por dia" data={data.series?.maintOpenedByDay || []} />
-            <TinySeriesPreview title="Manutenções finalizadas por dia" data={data.series?.maintClosedByDay || []} />
-          </div>
-
-          <p className="text-xs text-slate-400">Tendência (placeholder): {trendPlaceholder}</p>
         </>
       )}
     </section>
