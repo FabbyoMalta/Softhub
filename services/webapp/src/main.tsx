@@ -131,6 +131,7 @@ function AgendaPage() {
   const [loading, setLoading] = useState(false)
   const [selectedFilialId, setSelectedFilialId] = useState<'' | '1' | '2'>('')
   const [pendingOpen, setPendingOpen] = useState(false)
+  const [pendingMode, setPendingMode] = useState<'pending' | 'overdue'>('pending')
   const [pending, setPending] = useState<any[]>([])
   const [pendingTotal, setPendingTotal] = useState(0)
   const [pendingError, setPendingError] = useState<string | null>(null)
@@ -183,7 +184,11 @@ ${text.slice(0, 300)}`)
 
   useEffect(() => {
     const search = new URLSearchParams(window.location.search)
-    if (search.get('open_pending') === 'true') setPendingOpen(true)
+    const view = search.get('view')
+    if (search.get('open_pending') === 'true' || view === 'overdue') {
+      setPendingOpen(true)
+      setPendingMode('overdue')
+    }
     load({ category: 'instalacao' }, '', today, 7, '', '7d')
   }, [])
 
@@ -217,12 +222,12 @@ ${text.slice(0, 300)}`)
     <ActionBar
       left={<div className="flex flex-wrap gap-2"><PillToggle active={selectedFilialId === ''} onClick={() => { setSelectedFilialId(''); load(undefined, selectedFilterId || undefined, startDate, days, '') }}>Todas</PillToggle><PillToggle active={selectedFilialId === '1'} onClick={() => { setSelectedFilialId('1'); load(undefined, selectedFilterId || undefined, startDate, days, '1') }}>F1 {filialNames['1']}</PillToggle><PillToggle active={selectedFilialId === '2'} onClick={() => { setSelectedFilialId('2'); load(undefined, selectedFilterId || undefined, startDate, days, '2') }}>F2 {filialNames['2']}</PillToggle></div>}
       center={<div className="flex flex-wrap gap-2"><label>Período<select className={inputBaseClass} value={period} onChange={(e) => setPeriodAndLoad(e.target.value as any)}><option value="today">Hoje</option><option value="7d">7 dias</option><option value="14d">14 dias</option><option value="30d">30 dias</option></select></label><label>Início<input className={inputBaseClass} type="date" value={startDate} onChange={(e) => { const d = e.target.value; setStartDate(d); load(undefined, selectedFilterId || undefined, d, days) }} /></label></div>}
-      right={<div className="flex flex-wrap gap-2"><button className="btn" onClick={() => { setPendingOpen((v) => !v); if (!pendingOpen) loadPending() }}>Pendentes {pendingTotal > 0 ? `(${pendingTotal})` : ''}</button></div>}
+      right={<div className="flex flex-wrap gap-2"><button className="btn" aria-label="Abrir lista de OS atrasadas" onClick={() => { setPendingOpen((v) => !v); setPendingMode('overdue'); if (!pendingOpen) loadPending() }}>{pendingMode === 'overdue' ? 'Atrasadas' : 'Pendentes'} {pendingTotal > 0 ? `(${pendingTotal})` : ''}</button></div>}
     />
 
     {pendingError ? <div className="rounded-2xl border border-rose-200 bg-rose-50 p-3 text-rose-700 text-sm whitespace-pre-wrap">{pendingError}</div> : null}
 
-    {pendingOpen ? <div className="panel mb-3"><h3>Pendentes</h3><div className="grid gap-2">{pending.map((p:any) => <div key={p.id} className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm"><div className="font-semibold">{p.cliente} · {p.data_agendada} {p.hora || ''}</div><div>{p.bairro_cidade} · {p.dias_atraso} dias atraso</div></div>)}{pending.length===0?<div className="text-sm text-slate-500">Sem pendentes.</div>:null}</div></div> : null}
+    {pendingOpen ? <div className="panel mb-3"><h3>{pendingMode === 'overdue' ? 'Atrasadas' : 'Pendentes'}</h3><div className="grid gap-2">{pending.map((p:any) => <div key={p.id} className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm"><div className="font-semibold">{p.cliente} · {p.data_agendada} {p.hora || ''}</div><div>{p.bairro_cidade} · {p.dias_atraso} dias atraso</div></div>)}{pending.length===0?<div className="text-sm text-slate-500">Sem OS atrasadas.</div>:null}</div></div> : null}
 
     <AgendaBoard days={agendaDays} startDate={startDate} totalDays={days} loading={loading} selectedFilialId={selectedFilialId} filialNames={filialNames} />
     <FilterBuilder open={builderOpen} value={currentFilter} editingFilter={editing} onClose={() => setBuilderOpen(false)} onApply={(f) => { setCurrentFilter(f); setSelectedFilterId(''); load(f) }} onSave={save} onUpdate={update} />

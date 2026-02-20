@@ -118,11 +118,22 @@ export function DashboardPage({ apiBase }: { apiBase: string }) {
               <h3 className="text-base font-semibold text-amber-900">Situação do Dia</h3>
               <span className="text-xs text-amber-800">{data.today.date}</span>
             </div>
-            <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-              <div className="rounded-xl bg-white p-3"><p className="text-xs text-slate-500">Previstas hoje</p><p className="text-2xl font-bold text-slate-900">{data.today.installs.scheduledTotal}</p></div>
-              <div className="rounded-xl bg-white p-3"><p className="text-xs text-slate-500">Concluídas hoje</p><p className="text-2xl font-bold text-slate-900">{data.today.installs.completedToday}</p></div>
-              <div className="rounded-xl bg-white p-3"><p className="text-xs text-slate-500">Atrasadas total</p><p className="text-2xl font-bold text-slate-900">{data.today.installs.overdueTotal}</p></div>
-              <div className="rounded-xl bg-white p-3"><p className="text-xs text-slate-500">Cumprimento</p><p className="text-2xl font-bold text-slate-900">{Math.round((data.today.installs.completionRate || 0) * 100)}%</p></div>
+            <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
+              <div className="rounded-xl bg-white p-2.5"><p className="text-xs text-slate-500">Previstas hoje</p><p className="text-2xl font-bold text-slate-900">{data.today.installs.scheduledTotal}</p></div>
+              <div className="rounded-xl bg-white p-2.5"><p className="text-xs text-slate-500">Concluídas hoje</p><p className="text-2xl font-bold text-slate-900">{data.today.installs.completedToday}</p></div>
+              <button
+                type="button"
+                aria-label="Ver OS atrasadas"
+                title="Ver lista de OS atrasadas na Agenda"
+                onClick={() => navigate('/agenda?view=overdue')}
+                className="cursor-pointer rounded-xl border border-amber-300 bg-white p-2.5 text-left transition hover:bg-amber-50 hover:shadow-sm"
+              >
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-amber-700">Crítico</p>
+                <p className="text-xs text-slate-500">Atrasadas total</p>
+                <p className="text-2xl font-bold text-amber-900">{data.today.installs.overdueTotal}</p>
+                <p className="text-[11px] text-amber-700">Instalações abertas com agendamento antes de hoje</p>
+              </button>
+              <div className="rounded-xl bg-white p-2.5"><p className="text-xs text-slate-500">Cumprimento</p><p className="text-2xl font-bold text-slate-900">{Math.round((data.today.installs.completionRate || 0) * 100)}%</p></div>
             </div>
           </section>
 
@@ -152,6 +163,7 @@ export function DashboardPage({ apiBase }: { apiBase: string }) {
               <p className="text-xs text-amber-700">Instalações abertas com agendamento antes de hoje</p>
             </button>
           </div>
+
 
           <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
             <TinySeriesPreview title="Instalações agendadas por dia" data={data.series?.installationsScheduledByDay || []} />
