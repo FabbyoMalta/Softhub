@@ -1,127 +1,111 @@
-# SOFTHUB (Ops Console) — MVP
+# SOFTHUB (Ops Console)
 
-Monorepo com FastAPI + Postgres + Redis + Celery + Vite/React TS, com integração IXCsoft via `grid_param`.
+Monorepo com FastAPI + Postgres + Redis + Celery + Vite/React (IXC via `grid_param`).
 
 ## Estrutura
 
-- `services/core_api`: API principal.
-- `services/worker`: Celery worker.
-- `services/webapp`: frontend React.
-- `docker-compose.yml`: stack completa em modo mock por padrão.
+- `services/core_api`: API FastAPI
+- `services/worker`: worker Celery
+- `services/webapp`: frontend React/Vite
+- `docker-compose.yml`: ambiente de desenvolvimento
+- `docker-compose.prod.yml`: ambiente de produção local/intranet
 
-## Funcionalidades MVP
+---
 
-### Billing
-
-- `GET /billing/open`: lista contas a receber em aberto (`valor_aberto > 0`) com enrich de contrato.
-- Idempotência para ação de automação de 20 dias usando tabela `billing_actions`.
-
-### Dashboard (agenda semanal + manutenções)
-
-- `GET /dashboard/agenda-week?start=YYYY-MM-DD&days=7&filter_id=&filter_json=`
-- `GET /dashboard/maintenances?from=YYYY-MM-DD&to=YYYY-MM-DD&filter_id=&filter_json=`
-- Filtros salvos:
-  - `GET /filters?scope=agenda_week|maintenances`
-  - `POST /filters` com `{name, scope, definition_json}`
-  - `DELETE /filters/{id}`
-
-Regras aplicadas:
-- backend sempre envia `grid_param` para `/su_oss_chamado` (filtro pesado no IXC)
-- backend enriquece OS com dados de cliente via endpoint `/cliente`
-- frontend envia apenas filtro humano (`definition_json`)
-
-## Mapeamentos (MVP)
-
-Arquivo central: `services/core_api/app/services/dashboard.py`
-
-- `STATUS_LABELS`: mapeia código -> nome
-- `STATUS_GROUPS`:
-  - `open_like = ["A","AN","EN","AS","DS","EX","RAG"]`
-  - `scheduled = ["AG","RAG"]`
-  - `done = ["F"]`
-- `ASSUNTO_CATEGORIES`:
-  - `"1" -> "instalacao"`
-  - `"15" -> "mudanca_endereco"`
-  - `"17" -> "sem_conexao"`
-  - `"34" -> "quedas_constantes"`
-  - `"31" -> "analise_suporte"`
-- `INSTALL_ASSUNTOS = {"1"}`
-- `MAINTENANCE_ASSUNTOS = {"17","34","31"}`
-
-Para ajustar no seu ambiente IXC, altere os dicionários/sets acima.
-
-## Grid builder central
-
-Arquivo: `services/core_api/app/services/ixc_grid_builder.py`
-
-Constantes TB:
-- `TB_OS_DATA_AGENDA = su_oss_chamado.data_agenda`
-- `TB_OS_STATUS = su_oss_chamado.status`
-- `TB_OS_ID_ASSUNTO = su_oss_chamado.id_assunto`
-- `TB_OS_ID_CLIENTE = su_oss_chamado.id_cliente`
-
-## Rodando (modo MOCK)
+## Desenvolvimento (compose padrão)
 
 ```bash
 docker compose up -d --build
 ```
 
+Acessos:
 - API: `http://localhost:8000`
-- Frontend: `http://localhost:5173/dashboard`
+- Frontend dev: `http://localhost:5173`
 
-### URLs de acesso (SPA + Billing)
+### API base no frontend
 
-- **Dev recomendado:** abra o frontend em `http://localhost:5173`.
-- **Também suportado:** `http://localhost:8000` com fallback SPA no FastAPI (ex.: `/billing`, `/agenda`, `/manutencoes`).
+- Dev em portas separadas: `VITE_API_BASE=http://localhost:8000`
+- Mesmo host/reverse proxy: `VITE_API_BASE=/api`
 
-Para configurar a base da API no frontend (`services/webapp`):
+---
 
-- `VITE_API_BASE=http://localhost:8000` para desenvolvimento local em portas separadas.
-- `VITE_API_BASE=` (string vazia/same-origin) quando frontend e API estão no mesmo host/porta via reverse proxy.
+## Produção local/intranet
 
-Exemplo:
+### 1) Preparar env
 
-```bash
-cd services/webapp
-VITE_API_BASE=http://localhost:8000 npm run dev
-```
-
-Teste rápido de endpoints de billing sem `curl` (via Python):
+Copie e ajuste:
 
 ```bash
-python -c "import requests; print(requests.get('http://localhost:8000/billing/open', timeout=20).status_code); print(requests.get('http://localhost:8000/billing/actions?limit=5', timeout=20).status_code)"
+cp .env.prod.example .env.prod
 ```
 
-## Modo REAL (IXC)
+Preencha ao menos:
+- `IXC_HOST`, `IXC_USER`, `IXC_TOKEN`
+- `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`
+- `CORE_API_WORKERS` (default recomendado: `2`)
 
-No `docker-compose.yml` (ou `.env` da API), altere:
+### 2) Subir stack
 
-- `IXC_MODE=real`
-- `IXC_HOST=<seu-host-ixc>`
-- `IXC_USER=<usuario-webservice>`
-- `IXC_TOKEN=<token-webservice>`
-- `IXC_VERIFY_TLS=true|false`
+```bash
+docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
+```
 
-## Profiling e cache da dashboard
+Acesso:
+- `http://<ip-da-maquina>/`
 
-Variáveis novas na API:
+> Em produção, somente o serviço `web` é exposto (porta `80`).
+> O `core_api` fica interno e é acessado via `/api` no Nginx.
 
-- `SOFTHUB_PROFILE=1` ativa logs estruturados de profiling e endpoint de debug.
-- `DASHBOARD_CACHE_TTL_S=60` define TTL do cache do summary (sugestão: 30–120).
+---
 
-Com profiling ativo:
+## Nginx (produção)
 
-- logs mostram etapas com `elapsed_ms` (IXC/paginação/merge/summary)
-- endpoint `GET /debug/perf/last?limit=100` retorna últimos eventos de timing
+Arquivo: `services/webapp/nginx.conf`
 
-No endpoint `GET /dashboard/summary`, confira header:
+- Serve SPA com fallback `try_files ... /index.html`
+- Faz reverse proxy de `/api/*` para `core_api:8000`
+- `gzip on`
 
-- `X-Cache: HIT` quando veio do Redis
-- `X-Cache: MISS` quando calculou e gravou no cache
+### Proteção opcional de `/admin` e `/billing` (basic auth)
 
-## Testes principais
+No `nginx.conf` há bloco comentado para proteção com `.htpasswd`.
+
+Gerar `.htpasswd`:
+
+```bash
+docker run --rm --entrypoint htpasswd httpd:2 -Bbn admin SENHA_FORTE > .htpasswd
+```
+
+Depois, monte o arquivo no container Nginx em `/etc/nginx/.htpasswd`.
+
+> MVP atual também suporta ocultar links sensíveis via frontend com `VITE_FEATURE_ADMIN=false`.
+
+---
+
+## Observabilidade
+
+### API
+
+- Middleware registra duração por request (`duration_ms`) e adiciona header `X-Response-Time-Ms`.
+- `IXCClient` mantém timeout/retry e gera warning em chamadas lentas (`IXC_SLOW_THRESHOLD_MS`).
+- Em resposta não-JSON do IXC, loga claramente `status_code` e os primeiros 200 bytes do body.
+
+### Healthcheck
+
+- `core_api`: `GET /healthz`
+
+---
+
+## Testes backend
 
 ```bash
 cd services/core_api
 python -m pytest -q
+```
+
+## Build frontend
+
+```bash
+cd services/webapp
+npm run build
 ```
