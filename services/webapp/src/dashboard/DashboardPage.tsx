@@ -144,6 +144,24 @@ export function DashboardPage({ apiBase }: { apiBase: string }) {
               data={data.maintenances}
               totalOSPeriod={data.totals.osPeriod}
             />
+            <button className="rounded-2xl border border-amber-300 bg-amber-50 p-4 text-left shadow-sm" onClick={() => navigate('/agenda?open_pending=true')}>
+              <p className="text-sm font-semibold text-amber-800">OS pendentes</p>
+              <p className="text-3xl font-bold text-amber-900">{data.installations.pendingInstallationsTotal}</p>
+              <p className="text-xs text-amber-700">Instalações abertas com agendamento antes de hoje</p>
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+            <div className="rounded-2xl border border-amber-300 bg-amber-50 p-4 shadow-sm">
+              <p className="text-sm font-semibold text-amber-800">Pendentes hoje</p>
+              <p className="text-3xl font-bold text-amber-900">{data.today.installs.pendingToday}</p>
+              <p className="text-xs text-amber-700">Instalações abertas com data agendada para hoje</p>
+            </div>
+            <button className="rounded-2xl border border-amber-300 bg-amber-50 p-4 text-left shadow-sm" onClick={() => navigate('/agenda?open_pending=true')}>
+              <p className="text-sm font-semibold text-amber-800">OS pendentes</p>
+              <p className="text-3xl font-bold text-amber-900">{data.installations.pendingInstallationsTotal}</p>
+              <p className="text-xs text-amber-700">Instalações abertas com agendamento antes de hoje</p>
+            </button>
           </div>
 
 
