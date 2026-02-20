@@ -66,19 +66,22 @@ Arquivo: `services/webapp/nginx.conf`
 - Faz reverse proxy de `/api/*` para `core_api:8000`
 - `gzip on`
 
-### Proteção opcional de `/admin` e `/billing` (basic auth)
+### Proteção de `/admin` e `/billing` (basic auth)
 
-No `nginx.conf` há bloco comentado para proteção com `.htpasswd`.
+`/dashboard` e `/agenda` permanecem públicos (sem login).
 
-Gerar `.htpasswd`:
+Em produção local, as rotas `/admin` e `/billing` são protegidas no Nginx com Basic Auth, usando o arquivo `deploy/htpasswd` montado no container web.
+
+Gerar `deploy/htpasswd`:
 
 ```bash
-docker run --rm --entrypoint htpasswd httpd:2 -Bbn admin SENHA_FORTE > .htpasswd
+mkdir -p deploy
+htpasswd -c deploy/htpasswd admin
 ```
 
-Depois, monte o arquivo no container Nginx em `/etc/nginx/.htpasswd`.
+Depois reinicie o serviço `web` para aplicar alterações.
 
-> MVP atual também suporta ocultar links sensíveis via frontend com `VITE_FEATURE_ADMIN=false`.
+> O frontend ainda pode ocultar links sensíveis com `VITE_FEATURE_ADMIN=false`, mas a proteção efetiva está no reverse-proxy.
 
 ---
 

@@ -55,6 +55,8 @@ services:
         condition: service_healthy
     ports:
       - "80:80"
+    volumes:
+      - ./deploy/htpasswd:/etc/nginx/.htpasswd:ro
 
 volumes:
   postgres_data:
