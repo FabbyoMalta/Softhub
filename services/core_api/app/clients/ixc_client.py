@@ -83,6 +83,8 @@ class IXCClient:
                             'rp': rp,
                         },
                     )
+                if elapsed_ms >= get_settings().ixc_slow_threshold_ms:
+                    logger.warning('IXC slow call endpoint=%s status=%s elapsed_ms=%s page=%s rp=%s', endpoint, response.status_code, elapsed_ms, page, rp)
                 if response.status_code in {408, 429} or response.status_code >= 500:
                     raise IXCClientError(
                         f'IXC retryable status for {endpoint} on attempt {attempt}: {response.status_code}'
@@ -97,6 +99,13 @@ class IXCClient:
                 try:
                     data = response.json()
                 except Exception as exc:
+                    logger.error(
+                        'IXC non-json response endpoint=%s status_code=%s content_type=%s body_start=%r',
+                        endpoint,
+                        response.status_code,
+                        ct,
+                        text[:200],
+                    )
                     if get_settings().softhub_profile:
                         log_profile_event(
                             logger,
@@ -105,13 +114,13 @@ class IXCClient:
                                 'endpoint_ixc': endpoint,
                                 'status_code': response.status_code,
                                 'elapsed_ms': elapsed_ms,
-                                'body_start': text[:300],
+                                'body_start': text[:200],
                             },
                         )
                     raise IXCClientError(
                         f"IXC returned non-JSON for endpoint={endpoint} "
                         f"url={url} status={response.status_code} content-type={ct} "
-                        f"body_start={text[:300]!r}"
+                        f"body_start={text[:200]!r}"
                     ) from exc
 
                 if isinstance(data, dict) and data.get("type") == "error":

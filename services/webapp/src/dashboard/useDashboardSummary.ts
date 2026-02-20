@@ -10,7 +10,9 @@ export type DashboardSummaryView = {
     finishedToday: number
     totalPeriod: number
     finishedPeriod: number
+    pendingToday: number
     pendingPeriod: number
+    pendingInstallationsTotal: number
   }
   maintenances: {
     openedToday: number
@@ -20,6 +22,20 @@ export type DashboardSummaryView = {
     resolvedPeriod: number
   }
   totals: { osPeriod: number }
+  today: {
+    date: string
+    installs: {
+      scheduledTotal: number
+      completedToday: number
+      pendingToday: number
+      overdueTotal: number
+      completionRate: number
+    }
+    maintenances: {
+      openedToday: number
+      closedToday: number
+    }
+  }
   series?: {
     installationsScheduledByDay: SummaryPoint[]
     maintOpenedByDay: SummaryPoint[]
@@ -68,7 +84,9 @@ const mapSummary = (raw: any): DashboardSummaryView => {
       finishedToday: finishedTodayInstall,
       totalPeriod: totalPeriodInstall,
       finishedPeriod: normalizedFinishedPeriod,
+      pendingToday: safeNum(installRaw?.pendentes_hoje),
       pendingPeriod: normalizedPendingPeriod,
+      pendingInstallationsTotal: safeNum(installRaw?.pendentes_instalacao_total),
     },
     maintenances: {
       openedToday: safeNum(maintRaw?.abertas_hoje ?? maintRaw?.opened_today),
@@ -79,6 +97,20 @@ const mapSummary = (raw: any): DashboardSummaryView => {
     },
     totals: {
       osPeriod: safeNum(raw?.totals?.os_period) || totalPeriodInstall + totalPeriodMaint,
+    },
+    today: {
+      date: String(raw?.today?.date ?? periodStart),
+      installs: {
+        scheduledTotal: safeNum(raw?.today?.installs?.scheduled_total ?? installRaw?.agendadas_hoje),
+        completedToday: safeNum(raw?.today?.installs?.completed_today ?? installRaw?.finalizadas_hoje),
+        pendingToday: safeNum(raw?.today?.installs?.pending_today ?? installRaw?.pendentes_hoje),
+        overdueTotal: safeNum(raw?.today?.installs?.overdue_total ?? installRaw?.pendentes_instalacao_total),
+        completionRate: Number(raw?.today?.installs?.completion_rate ?? 0),
+      },
+      maintenances: {
+        openedToday: safeNum(raw?.today?.maintenances?.opened_today ?? maintRaw?.abertas_hoje),
+        closedToday: safeNum(raw?.today?.maintenances?.closed_today ?? maintRaw?.finalizadas_hoje),
+      },
     },
     series: {
       installationsScheduledByDay: Array.isArray(raw?.installations_scheduled_by_day) ? raw.installations_scheduled_by_day : [],
@@ -94,10 +126,10 @@ export function computeTrend(prev: number, curr: number): 'up' | 'down' | 'flat'
   return 'flat'
 }
 
-export function useDashboardSummary(apiBase: string, startDate: string, days: number): HookState {
+export function useDashboardSummary(apiBase: string, startDate: string, days: number, period: 'today' | '7d' | '14d' | '30d'): HookState {
   const [state, setState] = useState<HookState>({ data: null, loading: true, error: null })
 
-  const key = useMemo(() => `${startDate}:${days}`, [startDate, days])
+  const key = useMemo(() => `${startDate}:${days}:${period}`, [startDate, days, period])
 
   useEffect(() => {
     let isCancelled = false
@@ -115,7 +147,7 @@ export function useDashboardSummary(apiBase: string, startDate: string, days: nu
       }
 
       try {
-        const params = new URLSearchParams({ start: startDate, days: String(days) })
+        const params = new URLSearchParams({ start: startDate, days: String(days), period })
         const response = await fetch(`${apiBase}/dashboard/summary?${params.toString()}`, { signal: controller.signal })
         if (!response.ok) throw new Error('Não foi possível carregar os indicadores do dashboard.')
         const mapped = mapSummary(await response.json())
@@ -132,7 +164,7 @@ export function useDashboardSummary(apiBase: string, startDate: string, days: nu
       clearTimeout(timer)
       controller.abort()
     }
-  }, [apiBase, days, key, startDate])
+  }, [apiBase, days, key, startDate, period])
 
   return state
 }
