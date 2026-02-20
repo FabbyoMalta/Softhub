@@ -124,7 +124,8 @@ def resolve_definition(definition_json: dict[str, Any] | None, scope: str) -> di
 
     if not d.get('status_codes'):
         if scope == 'agenda_week':
-            d['status_codes'] = STATUS_GROUPS['scheduled']
+            merged = STATUS_GROUPS['open_like'] + STATUS_GROUPS['scheduled'] + STATUS_GROUPS['done']
+            d['status_codes'] = sorted(set(merged))
         else:
             merged = STATUS_GROUPS['open_like'] + STATUS_GROUPS['scheduled']
             d['status_codes'] = sorted(set(merged))

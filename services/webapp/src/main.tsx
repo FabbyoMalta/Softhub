@@ -106,7 +106,7 @@ function AgendaBoard({ days, startDate, totalDays, loading, selectedFilialId, fi
           </div>
         </div>
       )}
-      <OsDrawer item={selected} open={!!selected} onClose={() => setSelected(null)} />
+      <OsDrawer item={selected} open={!!selected} onClose={() => setSelected(null)} apiBase={API} />
     </section>
   )
 }

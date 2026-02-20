@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import date, timedelta
 from random import Random
 from typing import Any, Protocol
+import logging
 
 from app.clients.ixc_client import IXCClient, IXCClientError
 from app.config import get_settings
@@ -13,6 +14,8 @@ from app.utils.ixc_filters import (
     build_filters_contas_para_sync,
     build_filters_contrato_by_id,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class IXCAdapter(Protocol):
@@ -44,6 +47,8 @@ class IXCAdapter(Protocol):
     def list_service_orders(self, grid_filters: list[dict[str, Any]]) -> list[dict[str, Any]]: ...
 
     def list_clientes_by_ids(self, ids: list[str]) -> list[dict[str, Any]]: ...
+
+    def list_oss_mensagens(self, id_chamado: str) -> list[dict[str, Any]]: ...
 
     def create_billing_ticket(self, payload: dict[str, Any]) -> dict[str, Any]: ...
 
@@ -162,6 +167,18 @@ class RealIXCAdapter:
                 if rows:
                     out.append(rows[0])
         return out
+
+
+    def list_oss_mensagens(self, id_chamado: str) -> list[dict[str, Any]]:
+        if not str(id_chamado).strip():
+            return []
+        filters = [{'TB': 'su_oss_chamado_mensagem.id_chamado', 'OP': '=', 'P': str(id_chamado)}]
+        try:
+            rows = self.client.iterate_all('/su_oss_chamado_mensagem', filters, sortname='data', sortorder='asc')
+        except IXCClientError as exc:
+            logger.warning('IXC list_oss_mensagens failed id_chamado=%s err=%s', id_chamado, exc)
+            return []
+        return sorted(rows, key=lambda r: str(r.get('data') or ''))
 
     def create_billing_ticket(self, payload: dict[str, Any]) -> dict[str, Any]:
         settings = get_settings()
@@ -388,6 +405,13 @@ class MockIXCAdapter:
                 }
             )
         return out
+
+
+    def list_oss_mensagens(self, id_chamado: str) -> list[dict[str, Any]]:
+        return [
+            {'id': '1', 'id_chamado': str(id_chamado), 'data': '2025-01-02 08:00:00', 'mensagem': 'OS criada', 'id_evento': '10', 'status': 'A'},
+            {'id': '2', 'id_chamado': str(id_chamado), 'data': '2025-01-02 10:00:00', 'mensagem': 'OS finalizada', 'id_evento': '99', 'status': 'F'},
+        ]
 
     def create_billing_ticket(self, payload: dict[str, Any]) -> dict[str, Any]:
         external_id = str(payload.get('external_id') or payload.get('titulo_id') or '0')

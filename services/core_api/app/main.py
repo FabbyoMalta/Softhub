@@ -11,6 +11,7 @@ from app.api.debug import router as debug_router
 from app.api.dashboard import router as dashboard_router
 from app.api.filters import router as filters_router
 from app.api.settings import router as settings_router
+from app.api.oss import router as oss_router
 from app.config import get_settings
 from app.db import init_db
 from app.services.adapters import close_ixc_resources
@@ -19,7 +20,7 @@ from app.utils.profiling import set_request_id
 settings = get_settings()
 WEBAPP_DIST_DIR = Path(__file__).resolve().parents[2] / 'webapp' / 'dist'
 WEBAPP_INDEX_FILE = WEBAPP_DIST_DIR / 'index.html'
-EXCLUDED_FRONTEND_PREFIXES = {'billing', 'dashboard', 'filters', 'settings', 'debug', 'healthz', 'docs', 'redoc', 'openapi.json'}
+EXCLUDED_FRONTEND_PREFIXES = {'billing', 'dashboard', 'filters', 'settings', 'debug', 'healthz', 'docs', 'redoc', 'openapi.json', 'oss'}
 
 app = FastAPI(title=settings.app_name)
 
@@ -36,6 +37,7 @@ app.include_router(debug_router)
 app.include_router(dashboard_router)
 app.include_router(filters_router)
 app.include_router(settings_router)
+app.include_router(oss_router)
 
 
 @app.on_event('startup')
