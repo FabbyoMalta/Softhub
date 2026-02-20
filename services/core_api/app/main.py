@@ -1,4 +1,6 @@
 import uuid
+import time
+import logging
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
@@ -17,6 +19,8 @@ from app.db import init_db
 from app.services.adapters import close_ixc_resources
 from app.utils.profiling import set_request_id
 
+logger = logging.getLogger(__name__)
+
 settings = get_settings()
 WEBAPP_DIST_DIR = Path(__file__).resolve().parents[2] / 'webapp' / 'dist'
 WEBAPP_INDEX_FILE = WEBAPP_DIST_DIR / 'index.html'
@@ -24,12 +28,17 @@ EXCLUDED_FRONTEND_PREFIXES = {'billing', 'dashboard', 'filters', 'settings', 'de
 
 app = FastAPI(title=settings.app_name)
 
+cors_origins = [x.strip() for x in settings.cors_allow_origins.split(',') if x.strip()]
+allow_origins = cors_origins or ['*']
+allow_methods = [x.strip() for x in settings.cors_allow_methods.split(',') if x.strip()] or ['*']
+allow_headers = [x.strip() for x in settings.cors_allow_headers.split(',') if x.strip()] or ['*']
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # depois você restringe
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=allow_origins,
+    allow_credentials=settings.cors_allow_credentials,
+    allow_methods=allow_methods,
+    allow_headers=allow_headers,
 )
 
 app.include_router(billing_router)
@@ -48,9 +57,13 @@ def startup() -> None:
 @app.middleware('http')
 async def request_id_middleware(request: Request, call_next):
     request_id = request.headers.get('x-request-id') or str(uuid.uuid4())
+    started = time.perf_counter()
     set_request_id(request_id)
     response = await call_next(request)
+    elapsed_ms = (time.perf_counter() - started) * 1000
+    logger.info('request method=%s path=%s status=%s duration_ms=%.2f', request.method, request.url.path, response.status_code, elapsed_ms)
     response.headers['X-Request-Id'] = request_id
+    response.headers['X-Response-Time-Ms'] = f"{elapsed_ms:.2f}"
     return response
 
 

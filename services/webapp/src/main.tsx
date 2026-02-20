@@ -13,7 +13,7 @@ import { PillToggle } from './components/PillToggle'
 import { ToastProvider, useToast } from './components/Toast'
 import type { AgendaDay, AgendaWeekResponse, AppSettings, DashboardItem, FilterDefinition, FilterScope, SavedFilter } from './types'
 
-const API = (import.meta.env.VITE_API_BASE?.trim() || 'http://localhost:8000').replace(/\/$/, '')
+const API = (import.meta.env.VITE_API_BASE?.trim() || '/api').replace(/\/$/, '')
 const STATUS_OPTIONS = ['A', 'AN', 'EN', 'AS', 'AG', 'DS', 'EX', 'F', 'RAG']
 const WEEKDAYS: Array<'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun'> = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
 const dayLabelFormatter = new Intl.DateTimeFormat('pt-BR', { weekday: 'short' })
@@ -31,6 +31,7 @@ const addDays = (base: string, days: number) => {
 }
 
 const inputBaseClass = "rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+const FEATURE_ADMIN = (import.meta.env.VITE_FEATURE_ADMIN ?? 'false') === 'true'
 
 function FilterBuilder({ open, value, editingFilter, onClose, onApply, onSave, onUpdate }: { open: boolean; value: FilterDefinition; editingFilter: SavedFilter | null; onClose: () => void; onApply: (filter: FilterDefinition) => void; onSave: (name: string, scope: FilterScope, filter: FilterDefinition) => void; onUpdate: (id: string, name: string, scope: FilterScope, filter: FilterDefinition) => void }) {
   const [draft, setDraft] = useState<FilterDefinition>(value)
@@ -336,11 +337,11 @@ function AdminPage() {
 }
 
 function Layout() {
-  return <main className="layout"><aside className="sidebar"><h1>Softhub</h1><nav><NavLink to="/dashboard">Dashboard</NavLink><NavLink to="/agenda">Agenda</NavLink><NavLink to="/manutencoes">Manutenções</NavLink><NavLink to="/billing">Billing</NavLink><NavLink to="/admin">Admin</NavLink></nav></aside><section className="content"><Outlet /></section></main>
+  return <main className="layout"><aside className="sidebar"><h1>Softhub</h1><nav><NavLink to="/dashboard">Dashboard</NavLink><NavLink to="/agenda">Agenda</NavLink><NavLink to="/manutencoes">Manutenções</NavLink>{FEATURE_ADMIN ? <NavLink to="/billing">Billing</NavLink> : null}{FEATURE_ADMIN ? <NavLink to="/admin">Admin</NavLink> : null}</nav></aside><section className="content"><Outlet /></section></main>
 }
 
 function AppRoutes() {
-  return <BrowserRouter><Routes><Route path="/" element={<Layout />}><Route index element={<Navigate to="/dashboard" replace />} /><Route path="dashboard" element={<DashboardPage apiBase={API} />} /><Route path="agenda" element={<AgendaPage />} /><Route path="manutencoes" element={<MaintenancesPage />} /><Route path="billing" element={<BillingPage apiBase={API} />} /><Route path="admin" element={<AdminPage />} /></Route></Routes></BrowserRouter>
+  return <BrowserRouter><Routes><Route path="/" element={<Layout />}><Route index element={<Navigate to="/dashboard" replace />} /><Route path="dashboard" element={<DashboardPage apiBase={API} />} /><Route path="agenda" element={<AgendaPage />} /><Route path="manutencoes" element={<MaintenancesPage />} />{FEATURE_ADMIN ? <Route path="billing" element={<BillingPage apiBase={API} />} /> : null}{FEATURE_ADMIN ? <Route path="admin" element={<AdminPage />} /> : null}</Route></Routes></BrowserRouter>
 }
 
 createRoot(document.getElementById('root')!).render(<ToastProvider><AppRoutes /></ToastProvider>)

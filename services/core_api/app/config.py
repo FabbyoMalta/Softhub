@@ -43,6 +43,13 @@ class Settings(BaseSettings):
     frontend_dev_url: str = Field(default='http://localhost:5173', alias='FRONTEND_DEV_URL')
     billing_case_seed_dev: bool = Field(default=False, alias='BILLING_CASE_SEED_DEV')
 
+    cors_allow_origins: str = Field(default='', alias='CORS_ALLOW_ORIGINS')
+    cors_allow_credentials: bool = Field(default=False, alias='CORS_ALLOW_CREDENTIALS')
+    cors_allow_methods: str = Field(default='*', alias='CORS_ALLOW_METHODS')
+    cors_allow_headers: str = Field(default='*', alias='CORS_ALLOW_HEADERS')
+
+    ixc_slow_threshold_ms: int = Field(default=1500, alias='IXC_SLOW_THRESHOLD_MS')
+
 
 @lru_cache
 def get_settings() -> Settings:
