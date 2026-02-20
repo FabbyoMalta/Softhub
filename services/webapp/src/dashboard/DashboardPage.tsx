@@ -1,9 +1,8 @@
 import React, { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { SummaryPanelInstallations } from './SummaryPanelInstallations'
 import { SummaryPanelMaintenances } from './SummaryPanelMaintenances'
-import { computeTrend, useDashboardSummary } from './useDashboardSummary'
+import { useDashboardSummary } from './useDashboardSummary'
 
 const dateFormatter = new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit' })
 const toISODate = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
@@ -30,26 +29,6 @@ function DashboardSkeleton() {
   )
 }
 
-function TinySeriesPreview({ title, data }: { title: string; data: Array<{ date: string; count: number }> }) {
-  if (!data.length) return null
-
-  return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-      <p className="mb-2 text-sm font-medium text-slate-700">{title}</p>
-      <div className="h-24 w-full">
-        <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={data}>
-            <XAxis dataKey="date" hide />
-            <YAxis hide />
-            <Tooltip />
-            <Line type="monotone" dataKey="count" stroke="#0ea5e9" strokeWidth={2} dot={false} />
-          </LineChart>
-        </ResponsiveContainer>
-      </div>
-    </div>
-  )
-}
-
 export function DashboardPage({ apiBase }: { apiBase: string }) {
   const navigate = useNavigate()
   const today = toISODate(new Date())
@@ -65,7 +44,15 @@ export function DashboardPage({ apiBase }: { apiBase: string }) {
     return `${dateFormatter.format(parseISODate(data.periodStart))} até ${dateFormatter.format(parseISODate(data.periodEnd))}`
   }, [data?.periodEnd, data?.periodStart])
 
-  const trendPlaceholder = computeTrend(0, data?.totals.osPeriod ?? 0)
+  const onPeriodChange = (p: 'today' | '7d' | '14d' | '30d') => {
+    setPeriod(p)
+    if (p === 'today') {
+      setStartDate(today)
+      setDays(1)
+    } else {
+      setDays(Number(p.replace('d', '')))
+    }
+  }
 
   const onPeriodChange = (p: 'today' | '7d' | '14d' | '30d') => {
     setPeriod(p)
@@ -159,14 +146,6 @@ export function DashboardPage({ apiBase }: { apiBase: string }) {
             </div>
           </div>
 
-
-          <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
-            <TinySeriesPreview title="Instalações agendadas por dia" data={data.series?.installationsScheduledByDay || []} />
-            <TinySeriesPreview title="Manutenções abertas por dia" data={data.series?.maintOpenedByDay || []} />
-            <TinySeriesPreview title="Manutenções finalizadas por dia" data={data.series?.maintClosedByDay || []} />
-          </div>
-
-          <p className="text-xs text-slate-400">Tendência (placeholder): {trendPlaceholder}</p>
         </>
       )}
     </section>
